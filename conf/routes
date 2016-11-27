@@ -1,0 +1,26 @@
+# Routes
+# This file defines all application routes (Higher priority routes first)
+# ~~~~
+
+# An example controller showing a sample home page
+GET     /quests                     controllers.ApplicationController.listQuests
+GET     /quests/:id                 controllers.ApplicationController.getQuest(id: String)
+POST    /quests                     controllers.ApplicationController.postQuest
+PUT     /quests/:id                 controllers.ApplicationController.putQuest(id: String)
+DELETE  /quests/:id                 controllers.ApplicationController.deleteQuest(id: String)
+
+GET     /players                    controllers.ApplicationController.listPlayers
+GET     /players/:id                controllers.ApplicationController.getPlayer(id: String)
+POST    /players                    controllers.ApplicationController.postPlayer
+PUT     /players/:id                controllers.ApplicationController.putPlayer(id: String)
+DELETE  /players/:id                controllers.ApplicationController.deletePlayer(id: String)
+
+GET     /items                      controllers.ApplicationController.listItems
+GET     /items/:id                  controllers.ApplicationController.getItem(id: String)
+POST    /items                      controllers.ApplicationController.postItem
+PUT     /items/:id                  controllers.ApplicationController.putItem(id: String)
+DELETE  /items/:id                  controllers.ApplicationController.deleteItem(id: String)
+
+
+# Map static resources from the /public folder to the /assets URL path
+GET     /assets/*file               controllers.Assets.versioned(path="/public", file: Asset)
