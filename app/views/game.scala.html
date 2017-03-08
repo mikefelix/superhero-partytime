@@ -1,0 +1,24 @@
+@(id: Long, form: Form[models.Game])(implicit flash: Flash, messages: Messages)
+
+@main {
+    <h2>Game management</h2>
+    <h3>@flash.get("success").getOrElse("Welcome!")</h3>
+    <h3>@flash.get("error").getOrElse("")</h3>
+
+    @helper.form(routes.FormController.updateGame(id)) {
+        @if(form.hasGlobalErrors) {
+            <p class="error">
+            @form.globalError.get.message
+            </p>
+        }
+
+        @helper.inputText(form("name"))
+
+        <p><button type="submit">Submit</button></p>
+    }
+
+    <p><a href="@routes.FormController.listQuests(id)">Quests</a></p>
+    <p><a href="@routes.FormController.listPowers(id)">Powers</a></p>
+    <p><a href="@routes.FormController.listItems(id)">Items</a></p>
+
+}

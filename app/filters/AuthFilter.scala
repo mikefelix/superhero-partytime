@@ -16,7 +16,7 @@ import scala.concurrent.{ExecutionContext, Future}
  * It is used below by the `map` method.
  */
 @Singleton
-class ExampleFilter @Inject()(
+class AuthFilter @Inject()(
     implicit override val mat: Materializer,
     exec: ExecutionContext) extends Filter {
 
@@ -25,6 +25,11 @@ class ExampleFilter @Inject()(
     // Run the next filter in the chain. This will call other filters
     // and eventually call the action. Take the result and modify it
     // by adding a new header.
+    requestHeader.headers.get("Authorization") match {
+      case Some(auth) =>
+//        requestHeader.session.
+      case None =>
+    }
     nextFilter(requestHeader).map { result =>
       result.withHeaders("X-ExampleFilter" -> "foo")
     }

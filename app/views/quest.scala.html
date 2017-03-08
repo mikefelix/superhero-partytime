@@ -1,0 +1,33 @@
+@(id: Long, game: Game, items: Seq[(String, String)], powers: Seq[(String, String)], form: Form[models.QuestDescription])(implicit flash: Flash, messages: Messages)
+
+@main {
+    <h2><a href="@routes.FormController.showGameForm(game.id)">Game @game.id</a>, Quest @id</h2>
+    <p><a href="@routes.FormController.listQuests(game.id)"><< Quests</a></p>
+
+    <h3>@flash.get("error").getOrElse("")</h3>
+
+    @helper.form(routes.FormController.updateQuest(game.id, id)) {
+        @if(form.hasGlobalErrors) {
+            <p class="error">
+            @form.globalError.get.message
+            </p>
+        }
+
+        @helper.inputText(form("name"))
+        @helper.textarea(form("description"))
+
+        <p>Required items:</p>
+
+        @helper.select(form("item1"), items, '_label -> "Item 1", '_default -> "-- Select item --", '_showConstraints -> false)
+        @helper.select(form("item2"), items, '_label -> "Item 2", '_default -> "-- Select item --", '_showConstraints -> false)
+        @helper.select(form("item3"), items, '_label -> "Item 3", '_default -> "-- Select item --", '_showConstraints -> false)
+
+        <p>Required powers:</p>
+
+        @helper.select(form("power1"), powers, '_label -> "Power 1", '_default -> "-- Select power --", '_showConstraints -> false)
+        @helper.select(form("power2"), powers, '_label -> "Power 2", '_default -> "-- Select power --", '_showConstraints -> false)
+        @helper.select(form("power3"), powers, '_label -> "Power 3", '_default -> "-- Select power --", '_showConstraints -> false)
+
+        <p><button type="submit" style="padding: 15px">Submit</button></p>
+    }
+}

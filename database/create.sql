@@ -1,39 +1,90 @@
+drop table quest_items; drop table quest_powers; drop table player_quests; drop table player_powers; drop table items; drop table powers; drop table players; drop table quests; drop table games;
 
-do $$
-begin
-    if not exists (select 1 from pg_type where typname = 'alpha_numeric') then
-      create domain alpha_numeric as varchar(128) check (value ~ '^[A-z0-9\-]+$');
-    end if;
-end$$;
+create table games (
+  id serial primary key,
+  name varchar(128) not null,
+  created timestamptz not null default now(),
+  updated timestamptz not null default now()
+);
 
+insert into games(name) values ('Cool game');
 
 create table quests (
-  id uuid not null primary key,
-  game uuid not null,
-  name alpha_numeric not null,
+  id serial primary key,
+  game integer not null references games("id"),
+  name varchar(128) not null,
   description text not null default '',
   created timestamptz not null default now(),
   updated timestamptz not null default now()
 );
 
+insert into quests(game, name, description) values (1, 'Petition the goddess', 'Petition her!');
+
 create table players (
-  id uuid not null primary key,
-  name alpha_numeric not null,
-  game uuid not null,
-  alias alpha_numeric not null,
+  id serial primary key,
+  game integer not null references games("id"),
+  name varchar(128) not null,
   created timestamptz not null default now(),
   updated timestamptz not null default now()
 );
 
-create table game (
-  id uuid not null primary key,
-  name alpha_numeric not null,
-  game uuid not null,
+insert into players(game, name) values (1, 'Mr. Buttkix');
+
+create table items (
+  id serial primary key,
+  game integer not null references games("id"),
+  name varchar(128) not null,
+  owner integer references players("id"),
+  description text not null default '',
   created timestamptz not null default now(),
   updated timestamptz not null default now()
 );
+
+insert into items(game, name, description) values (1, 'Lost fragment', 'A fragment without an owner');
+insert into items(game, name, owner, description) values (1, 'Found fragment', 1, 'A fragment with an owner');
+
+create table powers (
+  id serial primary key,
+  game integer not null references games("id"),
+  name varchar(128) not null,
+  description text not null default '',
+  created timestamptz not null default now(),
+  updated timestamptz not null default now()
+);
+
+insert into powers(game, name, description) values (1, 'Explode trees', 'The ability to explode trees with your mind. This is actually more impressive than it sounds.');
+insert into powers(game, name, description) values (1, 'Speak with dirt', 'The ability to talk to dirt. This doesn''t mean it talks back.');
 
 create table player_quests (
-  quest uuid not null primary key,
-  player uuid not null primary key
-)
+  quest integer not null references quests("id"),
+  player integer not null references players("id"),
+  primary key (quest, player)
+);
+
+insert into player_quests (quest, player) values (1, 1);
+
+create table player_powers (
+  power integer not null references powers("id"),
+  player integer not null references players("id"),
+  primary key (power, player)
+);
+
+insert into player_powers (power, player) values (1, 1);
+
+create table quest_items (
+  quest integer not null references quests("id"),
+  item integer not null references items("id"),
+  primary key (quest, item)
+);
+
+insert into quest_items (quest, item) values (1, 1);
+
+create table quest_powers (
+  quest integer not null references quests("id"),
+  power integer not null references powers("id"),
+  primary key (quest, power)
+);
+
+insert into quest_powers (quest, power) values (1, 1);
+
+

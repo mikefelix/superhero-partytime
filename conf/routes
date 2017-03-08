@@ -3,24 +3,49 @@
 # ~~~~
 
 # An example controller showing a sample home page
-GET     /quests                     controllers.ApplicationController.listQuests
-GET     /quests/:id                 controllers.ApplicationController.getQuest(id: String)
-POST    /quests                     controllers.ApplicationController.postQuest
-PUT     /quests/:id                 controllers.ApplicationController.putQuest(id: String)
-DELETE  /quests/:id                 controllers.ApplicationController.deleteQuest(id: String)
+GET     /games/:id                                         controllers.ApplicationController.getGame(id: Long)
+POST    /games                                             controllers.ApplicationController.postGame
 
-GET     /players                    controllers.ApplicationController.listPlayers
-GET     /players/:id                controllers.ApplicationController.getPlayer(id: String)
-POST    /players                    controllers.ApplicationController.postPlayer
-PUT     /players/:id                controllers.ApplicationController.putPlayer(id: String)
-DELETE  /players/:id                controllers.ApplicationController.deletePlayer(id: String)
+POST    /games/:gameId/items                               controllers.ApplicationController.postItem(gameId: Long)
+GET     /games/:gameId/items                               controllers.ApplicationController.getItems(gameId: Long)
 
-GET     /items                      controllers.ApplicationController.listItems
-GET     /items/:id                  controllers.ApplicationController.getItem(id: String)
-POST    /items                      controllers.ApplicationController.postItem
-PUT     /items/:id                  controllers.ApplicationController.putItem(id: String)
-DELETE  /items/:id                  controllers.ApplicationController.deleteItem(id: String)
+POST    /games/:gameId/powers                              controllers.ApplicationController.postPower(gameId: Long)
+GET     /games/:gameId/powers                              controllers.ApplicationController.getPowers(gameId: Long)
 
+GET     /games/:gameId/quests/:questId/items               controllers.ApplicationController.listItemsForQuest(gameId: Long, questId: Long)
+GET     /games/:gameId/quests/:questId/items/:id           controllers.ApplicationController.getItem(gameId: Long, questId: Long, id: Long)
+GET     /games/:gameId/quests                              controllers.ApplicationController.listQuests(gameId: Long)
+GET     /games/:gameId/quests/:id                          controllers.ApplicationController.getQuest(gameId: Long, id: Long)
+POST    /games/:gameId/quests                              controllers.ApplicationController.postQuest(gameId: Long)
+PUT     /games/:gameId/quests/:id                          controllers.ApplicationController.putQuest(gameId: Long, id: Long)
+DELETE  /games/:gameId/quests/:id                          controllers.ApplicationController.deleteQuest(gameId: Long, id: Long)
+
+GET     /games/:gameId/players/:playerId/items             controllers.ApplicationController.listItemsForPlayer(gameId: Long, playerId: Long)
+GET     /games/:gameId/players                             controllers.ApplicationController.listPlayers(gameId: Long)
+GET     /games/:gameId/players/:id                         controllers.ApplicationController.getPlayer(gameId: Long, id: Long)
+POST    /games/:gameId/players                             controllers.ApplicationController.postPlayer(gameId: Long)
+PUT     /games/:gameId/players/:id                         controllers.ApplicationController.putPlayer(gameId: Long, id: Long)
+DELETE  /games/:gameId/players/:id                         controllers.ApplicationController.deletePlayer(gameId: Long, id: Long)
+
+GET     /form/games                                        controllers.FormController.listGames
+GET     /form/games/:gameId                                controllers.FormController.showGameForm(gameId: Long)
+POST    /form/games/:gameId                                controllers.FormController.updateGame(gameId: Long)
+
+GET     /form/games/:gameId/quests                         controllers.FormController.listQuests(gameId: Long)
+GET     /form/games/:gameId/quests/:questId                controllers.FormController.showQuestForm(gameId: Long, questId: Long)
+POST    /form/games/:gameId/quests/:questId                controllers.FormController.updateQuest(gameId: Long, questId: Long)
+
+GET     /form/games/:gameId/items                          controllers.FormController.listItems(gameId: Long)
+GET     /form/games/:gameId/items/:id                      controllers.FormController.showItemForm(gameId: Long, id: Long)
+POST    /form/games/:gameId/items/:id                      controllers.FormController.updateItem(gameId: Long, id: Long)
+
+GET     /form/games/:gameId/powers                         controllers.FormController.listPowers(gameId: Long)
+GET     /form/games/:gameId/powers/:id                     controllers.FormController.showPowerForm(gameId: Long, id: Long)
+POST    /form/games/:gameId/powers/:id                     controllers.FormController.updatePower(gameId: Long, id: Long)
+
+GET     /login                                             controllers.FormController.login()
+POST    /login                                             controllers.FormController.authenticate()
 
 # Map static resources from the /public folder to the /assets URL path
-GET     /assets/*file               controllers.Assets.versioned(path="/public", file: Asset)
+#GET     /assets/*file                                      controllers.Assets.versioned(path="/public", file: Asset)
+GET     /assets/*file                                      controllers.Assets.at(path="/public", file)
