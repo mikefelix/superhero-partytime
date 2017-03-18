@@ -29,33 +29,12 @@ object PartyDAO {
   def findQuestByGame(gameId: Long): Future[Seq[Quest]] = db.run(questsByGame(gameId).result)
   def findQuestsByPlayer(playerId: Long): Future[Seq[Quest]] = db.run(questsByPlayer(playerId).result)
   def insertQuest(quest: Quest): Future[Int] = db.run(quests += quest)
-  def insertQuest(quest: QuestDescription): Future[Unit] = {
-/*
-      for {
-        _ <- quests += Quest(quest.id, quest.name, quest.description, quest.game)
-//        item <- Seq(quest.item1, quest.item2, quest.item3)
-        _ = Seq(quest.item1, quest.item2, quest.item3).filter(_.nonEmpty).map(item => questItems += QuestItem(quest.id, item.get))
-        _ <- questItems += QuestItem(quest.id, quest.item1.get) if quest.item1.nonEmpty
-        _ <- questItems += QuestItem(quest.id, quest.item2.get) if quest.item2.nonEmpty
-        _ <- questItems += QuestItem(quest.id, quest.item3.get) if quest.item3.nonEmpty
-        _ <- questPowers += QuestPower(quest.id, quest.power1.get) if quest.power1.nonEmpty
-        _ <- questPowers += QuestPower(quest.id, quest.power2.get) if quest.power2.nonEmpty
-        _ <- questPowers += QuestPower(quest.id, quest.power3.get) if quest.power3.nonEmpty
-//        power <- Seq(quest.power1, quest.power2, quest.power3)
-//        _ <- Seq(quest.power1, quest.power2, quest.power3).filter(_.nonEmpty).map(power => questPowers += QuestPower(quest.id, power.get))
-      } yield 1
-*/
-    val r = DBIO.seq(
-      quests += Quest(quest.id, quest.name, quest.description, quest.game),
-      questItems += QuestItem(quest.id, quest.item1.get),
-      questItems += QuestItem(quest.id, quest.item2.get),
-      questItems += QuestItem(quest.id, quest.item3.get),
-      questPowers += QuestPower(quest.id, quest.power1.get),
-      questPowers += QuestPower(quest.id, quest.power2.get),
-      questPowers += QuestPower(quest.id, quest.power3.get)
-    )
+  def insertQuest(quest: QuestDescription) = {
+    val questAdd = Seq(quests += Quest(quest.id, quest.name, quest.description, quest.game))
+    val itemsAdd = Seq(quest.item1, quest.item2, quest.item3).filter(_.nonEmpty).map(q => questItems += QuestItem(quest.id, q.get))
+    val powersAdd = Seq(quest.power1, quest.power2, quest.power3).filter(_.nonEmpty).map(q => questPowers += QuestPower(quest.id, q.get))
 
-    db.run(r)
+    db.run(DBIO.sequence(questAdd ++ itemsAdd ++ powersAdd))
   }
 
   def updateQuest(quest: Quest): Future[Int] = db.run(questById(quest.id).update(quest))
