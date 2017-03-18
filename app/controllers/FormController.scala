@@ -157,8 +157,6 @@ class FormController @Inject()(implicit configuration: Configuration, val messag
           }
         },
         quest => {
-          Redirect(routes.FormController.listQuests(gameId))
-/*
           if (questId < 1)
             dao.insertQuest(quest.copy(game = gameId)) map { res =>
               // TODO: return the right ID from the DAO
@@ -166,9 +164,9 @@ class FormController @Inject()(implicit configuration: Configuration, val messag
             }
           else
             dao.updateQuest(quest.copy(id = questId, game = gameId)) map { res =>
-              Redirect(routes.FormController.showQuestForm(gameId, questId))
+             // Redirect(routes.FormController.showQuestForm(gameId, questId))
+              Redirect(routes.FormController.listQuests(gameId))
             }
-*/
         }
       )
     }
