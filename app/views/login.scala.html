@@ -1,6 +1,6 @@
 @(form: Form[Login])(implicit messages: Messages)
 
-@main {
+@main(None) {
     @helper.form(routes.FormController.authenticate()) {
         <h1>Sign in</h1>
 

@@ -1,4 +1,4 @@
-@(content: Html)
+@(game: Option[Game])(content: Html)
 
 <!DOCTYPE html>
 <html>
@@ -11,9 +11,16 @@
 
         <header class="topbar">
             <h1 class="fill">
-                <a href="@routes.FormController.listGames()">
-                    Party game admin interface
-                </a>
+                @if(game.isEmpty){
+                    <a href="@routes.FormController.listGames()">
+                        Party game admin interface
+                    </a>
+                } else {
+                    <a href="@routes.FormController.showGameForm(game.get.id)">Game @game.get.id</a> |
+                    <a href="@routes.FormController.listQuests(game.get.id)">Quests</a> |
+                    <a href="@routes.FormController.listPowers(game.get.id)">Powers</a> |
+                    <a href="@routes.FormController.listItems(game.get.id)">Items</a>
+                }
             </h1>
         </header>
 

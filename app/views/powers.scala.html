@@ -7,8 +7,8 @@
     routes.FormController.showPowerForm(game.id, power.id)
 }
 
-@main {
-    <h2>Game <a href="@routes.FormController.showGameForm(game.id)">@game.id</a> powers</h2>
+@main(Some(game)) {
+    <h2>Powers</h2>
     <h3>@flash.get("error").getOrElse("")</h3>
 
     <table>

@@ -7,7 +7,7 @@
     routes.FormController.showGameForm(game.id)
 }
 
-@main {
+@main(None) {
     <h2>Game management</h2>
     <h3>@flash.get("error").getOrElse("")</h3>
 

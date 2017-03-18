@@ -1,7 +1,8 @@
 @(id: Long, game: Game, items: Seq[(String, String)], powers: Seq[(String, String)], form: Form[models.QuestDescription])(implicit flash: Flash, messages: Messages)
 
-@main {
-    <h2><a href="@routes.FormController.showGameForm(game.id)">Game @game.id</a>, Quest @id</h2>
+@main(Some(game)) {
+    <h2>Quest management</h2>
+
     <p><a href="@routes.FormController.listQuests(game.id)"><< Quests</a></p>
 
     <h3>@flash.get("error").getOrElse("")</h3>

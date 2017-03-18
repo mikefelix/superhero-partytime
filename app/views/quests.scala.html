@@ -7,9 +7,11 @@
     routes.FormController.showQuestForm(game.id, quest.id)
 }
 
-@main {
-    <h2><a href="@routes.FormController.showGameForm(game.id)">Game @game.id</a> quests</h2>
+@main(Some(game)) {
+    <h2>Quests</h2>
+
     <h3>@flash.get("error").getOrElse("")</h3>
+    <a href="@routes.FormController.showQuestForm(game.id, 0)">New quest</a>
 
     <table>
         <tr>
@@ -25,6 +27,5 @@
             </tr>
         }
 
-        <a href="@routes.FormController.showQuestForm(game.id, 0)">New quest</a>
     </table>
 }

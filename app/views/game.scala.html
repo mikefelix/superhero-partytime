@@ -1,6 +1,6 @@
 @(id: Long, form: Form[models.Game])(implicit flash: Flash, messages: Messages)
 
-@main {
+@main(form.value) {
     <h2>Game management</h2>
     <h3>@flash.get("error").getOrElse("")</h3>
 
@@ -15,9 +15,5 @@
 
         <p><button type="submit">Submit</button></p>
     }
-
-    <p><a href="@routes.FormController.listQuests(id)">Quests</a></p>
-    <p><a href="@routes.FormController.listPowers(id)">Powers</a></p>
-    <p><a href="@routes.FormController.listItems(id)">Items</a></p>
 
 }
