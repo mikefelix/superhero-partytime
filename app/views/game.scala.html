@@ -2,7 +2,6 @@
 
 @main {
     <h2>Game management</h2>
-    <h3>@flash.get("success").getOrElse("Welcome!")</h3>
     <h3>@flash.get("error").getOrElse("")</h3>
 
     @helper.form(routes.FormController.updateGame(id)) {

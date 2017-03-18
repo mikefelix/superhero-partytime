@@ -62,4 +62,14 @@ table.computers .header a {
     color: #666;
 }
 
+textarea, input {
+    width:90%
+}
 
+textarea {
+    height:200px
+}
+
+button {
+    padding:10px
+}
