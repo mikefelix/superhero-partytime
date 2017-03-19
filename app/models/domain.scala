@@ -22,6 +22,11 @@ trait Model {
   def toJson(extras: (String, JsValueWrapper)*): JsValue
 }
 
+trait Requirement {
+  val name: String
+  val description: String
+}
+
 case class Game(id: Long, name: String) extends Model {
   def this(body: JsValue) = this(
     (body \ "id").validate[Long].getOrElse(-1L),
@@ -50,7 +55,8 @@ case class Player(id: Long, game: Long, name: String) extends Model {
   )
 }
 
-case class Item(id: Long, game: Long, name: String, description: String, owner: Option[Long]) extends Model {
+case class Item(id: Long, game: Long, name: String, description: String, owner: Option[Long]) extends Model with Requirement {
+  def this(id: Long) = this(id, 0, "", "", None)
   def this(body: JsValue) = this(
     (body \ "id").validate[Long].getOrElse(-1L),
     (body \ "game").validate[Long].get,
@@ -69,7 +75,8 @@ case class Item(id: Long, game: Long, name: String, description: String, owner: 
   )
 }
 
-case class Power(id: Long, game: Long, name: String, description: String) extends Model {
+case class Power(id: Long, game: Long, name: String, description: String) extends Model with Requirement {
+  def this(id: Long) = this(id, 0, "", "")
   def this(body: JsValue) = this(
     (body \ "id").validate[Long].getOrElse(-1L),
     (body \ "game").validate[Long].get,
@@ -215,7 +222,36 @@ class QuestPowers(tag: Tag) extends Table[QuestPower](tag, "quest_powers"){
 }
 
 case class QuestDescription(id: Long, name: String, description: String, game: Long,
-                            item1: Option[Long], item2: Option[Long], item3: Option[Long],
-                            power1: Option[Long], power2: Option[Long], power3: Option[Long]){
+                            item1: Option[Item], item2: Option[Item], item3: Option[Item],
+                            power1: Option[Power], power2: Option[Power], power3: Option[Power]){
   def this(id: Long, name: String, description: String, game: Long) = this(id, name, description, game, None, None, None, None, None, None)
+  def items = Seq(item1, item2, item3).filter(_.nonEmpty).map(_.get)
+  def powers = Seq(power1, power2, power3).filter(_.nonEmpty).map(_.get)
+  def quest = Quest(id, name, description, game)
+}
+
+object QuestDescription {
+  def applyIds(id: Long, name: String, description: String, game: Long,
+                              item1: Option[Long], item2: Option[Long], item3: Option[Long],
+                              power1: Option[Long], power2: Option[Long], power3: Option[Long]) = {
+    new QuestDescription(id, name, description, game,
+      item1.map(new Item(_)), item2.map(new Item(_)), item3.map(new Item(_)),
+      power1.map(new Power(_)), power2.map(new Power(_)), power3.map(new Power(_)))
+  }
+
+  def unapplyIds(qd: QuestDescription): Option[(Long, String, String, Long, Option[Long], Option[Long], Option[Long], Option[Long], Option[Long], Option[Long])] = {
+    Some(qd.id, qd.name, qd.description, qd.game,
+      qd.item1.map(_.id), qd.item2.map(_.id), qd.item3.map(_.id),
+      qd.power1.map(_.id), qd.power2.map(_.id), qd.power3.map(_.id))
+  }
+
+  def apply(quest: Quest, items: Seq[Item], powers: Seq[Power]) = {
+    val item1 = if (items.size > 0) Some(items(0)) else None
+    val item2 = if (items.size > 1) Some(items(1)) else None
+    val item3 = if (items.size > 2) Some(items(2)) else None
+    val power1 = if (powers.size > 0) Some(powers(0)) else None
+    val power2 = if (powers.size > 1) Some(powers(1)) else None
+    val power3 = if (powers.size > 2) Some(powers(2)) else None
+    new QuestDescription(quest.id, quest.name, quest.description, quest.game, item1, item2, item3, power1, power2, power3)
+  }
 }

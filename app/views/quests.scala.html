@@ -1,10 +1,10 @@
-@(quests: Seq[Quest], game: Game)(implicit flash: play.api.mvc.Flash, messages: Messages)
+@(quests: Seq[QuestDescription], game: Game)(implicit flash: play.api.mvc.Flash, messages: Messages)
 
 @****************************************
 * Helper generating navigation links    *
 ****************************************@
-@link(quest: Quest) = @{
-    routes.FormController.showQuestForm(game.id, quest.id)
+@link(questId: Long) = @{
+    routes.FormController.showQuestForm(game.id, questId)
 }
 
 @main(Some(game)) {
@@ -13,19 +13,19 @@
     <h3>@flash.get("error").getOrElse("")</h3>
     <a href="@routes.FormController.showQuestForm(game.id, 0)">New quest</a>
 
-    <table>
-        <tr>
-            <th>ID</th>
-            <th>Name</th>
-            <th>Description</th>
-        </tr>
-        @quests.map { q =>
-            <tr>
-                <td style="padding: 10px"><a href="@link(q)">@q.id</a></td>
-                <td style="padding: 10px">@q.name</td>
-                <td style="padding: 10px">@q.description</td>
-            </tr>
-        }
+    <hr/>
+    @quests.map { q =>
+            <h3><a href="@link(q.id)">@q.name</a></h3>
+            <div style="margin-bottom: 10px">@q.description</div>
+            <ul>
+                @q.items.map { item =>
+                    <li>Item: <a href="@routes.FormController.showItemForm(game.id, item.id)">@item.name</a> (@item.description)</li>
+                }
+                @q.powers.map { power =>
+                    <li>Power: <a href="@routes.FormController.showPowerForm(game.id, power.id)">@power.name</a> (@power.description)</li>
+                }
+            </ul>
+        <hr/>
+    }
 
-    </table>
 }

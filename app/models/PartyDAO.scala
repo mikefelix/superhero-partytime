@@ -2,11 +2,7 @@ package models
 
 import play.api.Play.current
 import play.api.db.DB
-import slick.dbio.DBIOAction
-import slick.dbio.Effect.{Read, Write}
 import slick.driver.PostgresDriver.api._
-import slick.jdbc.JdbcBackend
-import slick.profile.{FixedSqlAction, FixedSqlStreamingAction}
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
@@ -26,30 +22,39 @@ object PartyDAO {
 
   def allQuests: Future[Seq[Quest]] = db.run(quests.result)
   def findQuestById(id: Long): Future[Option[Quest]] = db.run(questById(id).result.headOption)
-  def findQuestByGame(gameId: Long): Future[Seq[Quest]] = db.run(questsByGame(gameId).result)
+  def findQuestsByGame(gameId: Long): Future[Seq[Quest]] = db.run(questsByGame(gameId).result)
   def findQuestsByPlayer(playerId: Long): Future[Seq[Quest]] = db.run(questsByPlayer(playerId).result)
-  def insertQuest(quest: Quest): Future[Int] = db.run(quests += quest)
-  def insertQuest(quest: QuestDescription) = {
-    val questAdd = Seq(quests += Quest(quest.id, quest.name, quest.description, quest.game))
-    val itemsAdd = Seq(quest.item1, quest.item2, quest.item3).filter(_.nonEmpty).map(q => questItems += QuestItem(quest.id, q.get))
-    val powersAdd = Seq(quest.power1, quest.power2, quest.power3).filter(_.nonEmpty).map(q => questPowers += QuestPower(quest.id, q.get))
+  def insertQuest(quest: Quest): Future[Quest] = db.run(questInsert += quest)
+  def insertQuest(questDesc: QuestDescription): Future[Long] = {
+    insertQuest(questDesc.quest) map { quest =>
 
-    db.run(DBIO.sequence(questAdd ++ itemsAdd ++ powersAdd))
+//      val questAdd = Seq(quests += Quest(quest.id, quest.name, quest.description, quest.game))
+      val itemsAdd = Seq(questDesc.item1, questDesc.item2, questDesc.item3).filter(_.nonEmpty).map { q =>
+        questItems += QuestItem(quest.id, q.get.id)
+      }
+
+      val powersAdd = Seq(questDesc.power1, questDesc.power2, questDesc.power3).filter(_.nonEmpty).map { q =>
+        questPowers += QuestPower(quest.id, q.get.id)
+      }
+
+      db.run(DBIO.sequence(itemsAdd ++ powersAdd))
+      quest.id
+    }
   }
 
   def updateQuest(quest: Quest): Future[Int] = db.run(questById(quest.id).update(quest))
   def updateQuest(quest: QuestDescription): Future[List[Int]] = {
     val actions = DBIO.sequence(List(
       // Update the quest details
-      questById(quest.id).update(Quest(quest.id, quest.name, quest.description, quest.game)),
+      quests.filter(_.id === quest.id).update(Quest(quest.id, quest.name, quest.description, quest.game)),
 
       // Remove all items and powers from the quest
       questItems.filter(_.quest === quest.id).delete,
       questPowers.filter(_.quest === quest.id).delete) ++
 
       // Add back the new items and powers
-      List(quest.item1, quest.item2, quest.item3).filter(_.nonEmpty).map(q => questItems += QuestItem(quest.id, q.get)) ++
-      List(quest.power1, quest.power2, quest.power3).filter(_.nonEmpty).map(p => questPowers += QuestPower(quest.id, p.get))
+      List(quest.item1, quest.item2, quest.item3).filter(_.nonEmpty).map(q => questItems += QuestItem(quest.id, q.get.id)) ++
+      List(quest.power1, quest.power2, quest.power3).filter(_.nonEmpty).map(p => questPowers += QuestPower(quest.id, p.get.id))
     )
 
     db run actions
@@ -97,9 +102,22 @@ object PartyDAO {
       case (questOpt, itemsForQuest, powersForQuest) =>
         questOpt map { quest =>
           QuestDescription(quest.id, quest.name, quest.description, quest.game,
-            itemsForQuest.option(0).map(_.id), itemsForQuest.option(1).map(_.id), itemsForQuest.option(2).map(_.id),
-            powersForQuest.option(0).map(_.id), powersForQuest.option(1).map(_.id), powersForQuest.option(2).map(_.id))
+            itemsForQuest.option(0), itemsForQuest.option(1), itemsForQuest.option(2),
+            powersForQuest.option(0), powersForQuest.option(1), powersForQuest.option(2))
         }
+    }
+  }
+
+  def findQuestDescsByGameId(gameId: Long): Future[Seq[QuestDescription]] = {
+    findQuestsByGame(gameId) flatMap { quests =>
+      Future.sequence {
+        for {
+          quest <- quests
+        } yield for {
+          items <- findItemsByQuest(quest.id)
+          powers <- findPowersByQuest(quest.id)
+        } yield QuestDescription(quest, items, powers)
+      }
     }
   }
 
@@ -116,11 +134,13 @@ object PartyDAO {
     }  
   }
   
-  private def questById(id: Long) = quests.filter(_.id === id)
+  private def questById(id: Long) = quests.sortBy(_.name).filter(_.id === id)
   private def playerById(id: Long) = players.filter(_.id === id)
   private def gameById(id: Long) = games.filter(_.id === id)
-  private def itemById(id: Long) = items.filter(_.id === id)
-  private def powerById(id: Long) = powers.filter(_.id === id)
+  private def itemById(id: Long) = items.sortBy(_.name).filter(_.id === id)
+  private def powerById(id: Long) = powers.sortBy(_.name).filter(_.id === id)
+
+  private def questInsert = quests returning quests.map(_.id) into ((quest, id) => quest.copy(id = id))
 
   private def questsByPlayer(playerId: Long) = for {
     playerQuest <- playerQuests if playerQuest.player === playerId
@@ -128,7 +148,7 @@ object PartyDAO {
   } yield quest
 
   private def questsByGame(gameId: Long) = for {
-    quest <- quests if quest.game === gameId
+    quest <- quests.sortBy(_.name) if quest.game === gameId
   } yield quest
 
   private def itemsByPlayer(playerId: Long) = items.filter(_.owner === playerId)
@@ -169,9 +189,9 @@ object PartyDAO {
     } yield difference(itemsP.map(_.id), itemsQ.map(_.quest)).isEmpty
   }
 
-  private def itemsByGame(gameId: Long) = items.filter(_.game === gameId)
+  private def itemsByGame(gameId: Long) = items.sortBy(_.name).filter(_.game === gameId)
 
-  private def powersByGame(gameId: Long) = powers.filter(_.game === gameId)
+  private def powersByGame(gameId: Long) = powers.sortBy(_.name).filter(_.game === gameId)
 
 
 }

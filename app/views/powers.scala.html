@@ -13,14 +13,12 @@
 
     <table>
         <tr>
-            <th>ID</th>
             <th>Name</th>
             <th>Description</th>
         </tr>
         @powers.map { q =>
             <tr>
-                <td style="padding: 10px"><a href="@link(q)">@q.id</a></td>
-                <td style="padding: 10px">@q.name</td>
+                <td style="padding: 10px"><a href="@link(q)">@q.name</a></td>
                 <td style="padding: 10px">@q.description</td>
             </tr>
         }

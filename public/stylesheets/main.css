@@ -73,3 +73,12 @@ textarea {
 button {
     padding:10px
 }
+
+select {
+    width: 90%
+}
+
+dl dt label {
+    text-align: left;
+    font-weight: bold;
+}

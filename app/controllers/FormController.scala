@@ -65,7 +65,7 @@ class FormController @Inject()(implicit configuration: Configuration, val messag
       "power1" -> optional(longNumber),
       "power2" -> optional(longNumber),
       "power3" -> optional(longNumber)
-    )(QuestDescription.apply)(QuestDescription.unapply)
+    )(QuestDescription.applyIds)(QuestDescription.unapplyIds)
   )
 
   def login = Action {
@@ -87,7 +87,7 @@ class FormController @Inject()(implicit configuration: Configuration, val messag
 
   def listQuests(gameId: Long) = Action.async { implicit request =>
     withGame(gameId) { game =>
-      findQuestByGame(game.id) map { quests =>
+      findQuestDescsByGameId(game.id) flatMap { quests =>
         Ok(views.html.quests(quests, game))
       }
     }
@@ -105,8 +105,8 @@ class FormController @Inject()(implicit configuration: Configuration, val messag
           findItemsByGame(gameId) flatMap { items =>
             findPowersByGame(gameId) flatMap { powers =>
               Ok(views.html.quest(questId, game,
-                items.map( item => (item.id.toString, item.name)),
-                powers.map( power => (power.id.toString, power.name)),
+                items.map( item => (item.id.toString, s"${item.name} (${item.description})")),
+                powers.map( power => (power.id.toString, s"${power.name} (${power.description})")),
                 questForm.fill(q)))
             }
           }

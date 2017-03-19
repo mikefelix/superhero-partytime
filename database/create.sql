@@ -1,4 +1,4 @@
-drop table quest_items; drop table quest_powers; drop table player_quests; drop table player_powers; drop table items; drop table powers; drop table players; drop table quests; drop table games;
+--drop table quest_items; drop table quest_powers; drop table player_quests; drop table player_powers; drop table items; drop table powers; drop table players; drop table quests; drop table games;
 
 create table games (
   id serial primary key,
