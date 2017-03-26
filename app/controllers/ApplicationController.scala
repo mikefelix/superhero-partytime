@@ -112,13 +112,8 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
   def getQuestForPlayer(gameId: Long, playerId: Long) = Action.async { implicit req =>
     Some(playerId) match {//req.player match {
       case Some(id) if playerId == id =>
-        val quest = for {
-          questOpt <- dao.findQuestDescByPlayer(playerId)
-          quest <- questOpt
-        } yield quest
-
-        quest map {
-          case Some(q) => Ok(q.toJson)
+        dao.findQuestDescByPlayer(playerId) flatMap {
+          case Some(quest) => Ok(quest.toJson)
           case None => NotFound
         }
       case _ => Unauthorized
@@ -233,38 +228,34 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
   }
 
   implicit def questToString(quest: Quest): String =
-    s"""{
-        | "id":${quest.id},
+    s"""{"id":${quest.id},
         | "name":"${quest.name.replace("\"", "\\\"")}",
         | "description":"${quest.description.replace("\"", "\\\"")}"
-        |}
-      """.stripMargin
+        |} """.stripMargin
 
   implicit def questDescToString(quest: QuestDescription): String = {
     val items = quest.items.map { item =>
-      s"""{ "name":"${item.name}",
-         |  "description":"${item.description}",
-         |  "id":${item.id}
-         |}
-       """.stripMargin
+      s"""{"name":"${item.name}",
+         |"description":"${item.description}",
+         |"id":${item.id},
+         |"found":${item.found}
+         |}""".stripMargin
     }
-    
+
     val powers = quest.powers.map { power =>
-      s"""{ "name":"${power.name}",
-         |  "description":"${power.description}",
-         |  "id":${power.id}
-         |}
-       """.stripMargin
+      s"""{"name":"${power.name}",
+         |"description":"${power.description}",
+         |"id":${power.id},
+         |"found":${power.found}
+         |}""".stripMargin
     }
     
-    s"""{
-        | "id":${quest.id},
-        | "name":"${quest.name.replace("\"", "\\\"")}",
-        | "description":"${quest.description.replace("\"", "\\\"")}",
-        | "items":[${items.mkString(",")}],
-        | "powers":[${powers.mkString(",")}]
-        |}
-      """.stripMargin
+    s"""{"id":${quest.id},
+        |"name":"${quest.name.replace("\"", "\\\"")}",
+        |"description":"${quest.description.replace("\"", "\\\"")}",
+        |"items":[${items.mkString(",")}],
+        |"powers":[${powers.mkString(",")}]
+        |}""".stripMargin
   }
 
 
@@ -280,7 +271,7 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
          |}
        """.stripMargin
     }
-    
+
     val powers = player.powers.map { power =>
       s"""{ "name":"${power.name}",
          |  "description":"${power.description}",

@@ -137,6 +137,7 @@ object PartyDAO {
   def findItemsByPlayer(playerId: Long): Future[Seq[Item]] = db.run(itemsByPlayer(playerId).result)
   def findItemsByQuest(questId: Long): Future[Seq[Item]] = db.run(itemsByQuest(questId).result)
   def findItemsByGame(gameId: Long): Future[Seq[Item]] = db.run(itemsByGame(gameId).result)
+  def findItemsHeldByPlayers(questId: Long): Future[Seq[Item]] = db.run(itemsHeldByPlayers(questId).result)
 
   def findQuestByPlayer(playerId: Long, side: Boolean): Future[Option[Quest]] = db.run(questsByPlayer(playerId, side).result.headOption)
   def findPlayersByQuest(questId: Long): Future[Seq[Player]] = db.run(playersByQuest(questId).result)
@@ -145,6 +146,10 @@ object PartyDAO {
   def findPowersByPlayer(playerId: Long): Future[Seq[Power]] = db.run(powersByPlayer(playerId).result)
   def findPowersByQuest(questId: Long): Future[Seq[Power]] = db.run(powersByQuest(questId).result)
   def findPowersByGame(gameId: Long): Future[Seq[Power]] = db.run(powersByGame(gameId).result)
+  def findPowersHeldByPlayers(questId: Long): Future[Seq[PlayerPower]] = db.run(powersHeldByPlayers(questId).result)
+
+  def findPlayerPowersByPlayer(playerId: Long): Future[Seq[PlayerPower]] = db.run(playerPowersByPlayer(playerId).result)
+  def findPlayerPowersByPower(powerId: Long): Future[Seq[PlayerPower]] = db.run(playerPowersByPower(powerId).result)
 
   def insertItem(item: Item): Future[Int] = db.run(items += item)
   def updateItem(item: Item): Future[Int] = db.run(items.filter(_.id === item.id).update(item))
@@ -155,32 +160,34 @@ object PartyDAO {
   def deletePower(id: Long): Future[Int] = db.run(powerById(id).delete)
 
   def findQuestDescById(id: Long): Future[Option[QuestDescription]] = {
-    (for {
-      quest <- findQuestById(id)
-      items <- findItemsByQuest(id)
-      powers <- findPowersByQuest(id)
-    } yield (quest, items, powers)) map {
-      case (questOpt, itemsForQuest, powersForQuest) =>
-        questOpt map { quest =>
-          QuestDescription(quest.id, quest.name, quest.description, quest.game,
-            itemsForQuest.option(0), itemsForQuest.option(1), itemsForQuest.option(2),
-            powersForQuest.option(0), powersForQuest.option(1), powersForQuest.option(2))
-        }
+    findQuestById(id) flatMap {
+      case Some(quest) =>
+        for {
+          itemsNeeded <- findItemsByQuest(quest.id)
+          powersNeeded <- findPowersByQuest(quest.id)
+          itemsHeld <- findItemsHeldByPlayers(quest.id)
+          powersHeld <- findPowersHeldByPlayers(quest.id)
+          itemsForQuest = getItemsNeeded(itemsNeeded, itemsHeld)
+          powersForQuest = getPowersNeeded(powersNeeded, powersHeld)
+        } yield Some(QuestDescription(quest, itemsForQuest, powersForQuest))
+
+      case None => Future(None)
     }
   }
 
   def findQuestDescByPlayer(id: Long, side: Boolean = false): Future[Option[QuestDescription]] = {
-    (for {
-      quest <- findQuestByPlayer(id, side)
-      items <- findItemsByQuest(id)
-      powers <- findPowersByQuest(id)
-    } yield (quest, items, powers)) map {
-      case (questOpt, itemsForQuest, powersForQuest) =>
-        questOpt map { quest =>
-          QuestDescription(quest.id, quest.name, quest.description, quest.game,
-            itemsForQuest.option(0), itemsForQuest.option(1), itemsForQuest.option(2),
-            powersForQuest.option(0), powersForQuest.option(1), powersForQuest.option(2))
-        }
+    findQuestByPlayer(id, side) flatMap {
+      case Some(quest) =>
+        for {
+          itemsNeeded <- findItemsByQuest(quest.id)
+          powersNeeded <- findPowersByQuest(quest.id)
+          itemsHeld <- findItemsHeldByPlayers(quest.id)
+          powersHeld <- findPowersHeldByPlayers(quest.id)
+          itemsForQuest = getItemsNeeded(itemsNeeded, itemsHeld)
+          powersForQuest = getPowersNeeded(powersNeeded, powersHeld)
+        } yield Some(QuestDescription(quest, itemsForQuest, powersForQuest))
+
+      case None => Future(None)
     }
   }
 
@@ -190,10 +197,26 @@ object PartyDAO {
         for {
           quest <- quests
         } yield for {
-          items <- findItemsByQuest(quest.id)
-          powers <- findPowersByQuest(quest.id)
-        } yield QuestDescription(quest, items, powers)
+          itemsNeeded <- findItemsByQuest(quest.id)
+          powersNeeded <- findPowersByQuest(quest.id)
+          itemsHeld <- findItemsHeldByPlayers(quest.id)
+          powersHeld <- findPowersHeldByPlayers(quest.id)
+          itemsForQuest = getItemsNeeded(itemsNeeded, itemsHeld)
+          powersForQuest = getPowersNeeded(powersNeeded, powersHeld)
+        } yield QuestDescription(quest, itemsForQuest, powersForQuest)
       }
+    }
+  }
+
+  private def getItemsNeeded(items: Seq[Item], allyItems: Seq[Item]): Seq[ItemNeeded] = {
+    items map { item =>
+      new ItemNeeded(item, allyItems.contains(item))
+    }
+  }
+
+  private def getPowersNeeded(powers: Seq[Power], allyPowers: Seq[PlayerPower]): Seq[PowerNeeded] = {
+    powers map { power =>
+      new PowerNeeded(power, allyPowers.exists(_.power == power.id))
     }
   }
 
@@ -239,6 +262,14 @@ object PartyDAO {
     power <- powers if power.id === playerPower.power
   } yield power
 
+  private def playerPowersByPlayer(playerId: Long) = for {
+    playerPower <- playerPowers if playerPower.player === playerId
+  } yield playerPower
+
+  private def playerPowersByPower(powerId: Long) = for {
+    playerPower <- playerPowers if playerPower.power === powerId
+  } yield playerPower
+
   private def powersByQuest(questId: Long) = for {
     questPower <- questPowers if questPower.quest === questId
     power <- powers if power.id === questPower.power
@@ -253,6 +284,11 @@ object PartyDAO {
     playerQuest <- playerQuests if playerQuest.quest === questId
     heldItem <- items if playerQuest.player === heldItem.owner
   } yield heldItem
+
+  private def powersHeldByPlayers(questId: Long) = for {
+    playerQuest <- playerQuests if playerQuest.quest === questId
+    playerPower <- playerPowers if playerPower.player === playerQuest.player
+  } yield playerPower
 
   private def itemsForQuest(questId: Long) = questItems.filter { (item) => item.quest === questId }
 

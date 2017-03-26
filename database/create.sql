@@ -30,8 +30,8 @@ create table players (
   updated timestamptz not null default now()
 );
 
-insert into players(game, alias, name) values (1, 'Brandon', 'Mr. Buttkix');
-insert into players(game, alias, name) values (1, 'Kimberly', 'Ms. Firelips');
+insert into players(game, alias, name) values (1, 'Mr. Buttkix', 'Brandon');
+insert into players(game, alias, name) values (1, 'Ms. Firelips', 'Kimberly');
 
 create table items (
   id serial primary key,
