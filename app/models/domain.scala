@@ -1,10 +1,6 @@
 package models
 
-import java.sql.{Date => SqlDate}
-import java.util.Date
-
-import play.api.libs.json.Json.JsValueWrapper
-import play.api.libs.json.Json.{toJsFieldJsValueWrapper => js}
+import play.api.libs.json.Json.{JsValueWrapper, toJsFieldJsValueWrapper => js}
 import play.api.libs.json.{JsValue, Json}
 import slick.driver.PostgresDriver.api._
 import slick.lifted.Tag
@@ -28,6 +24,7 @@ trait Requirement {
 }
 
 case class Game(id: Long, name: String) extends Model {
+  def this(id: Long) = this(id, "")
   def this(body: JsValue) = this(
     (body \ "id").validate[Long].getOrElse(-1L),
     (body \ "name").validate[String].get
@@ -40,11 +37,13 @@ case class Game(id: Long, name: String) extends Model {
   )
 }
 
-case class Player(id: Long, game: Long, name: String) extends Model {
+case class Player(id: Long, game: Long, name: String, alias: String) extends Model {
+  def this(id: Long) = this(id, 0, "", "")
   def this(body: JsValue) = this(
     (body \ "id").validate[Long].getOrElse(-1L),
     (body \ "game").validate[Long].get,
-    (body \ "name").validate[String].get
+    (body \ "name").validate[String].get,
+    (body \ "alias").validate[String].get
   )
 
   def toJson(extras: (String, JsValueWrapper)*) = Json.obj(
@@ -94,6 +93,7 @@ case class Power(id: Long, game: Long, name: String, description: String) extend
 }
 
 case class Quest(id: Long, name: String, description: String, game: Long) extends Model {
+  def this(id: Long) = this(id, "", "", 0)
   def this(body: JsValue) = this(
     (body \ "id").validate[Long].getOrElse(-1L),
     (body \ "name").validate[String].get,
@@ -167,8 +167,9 @@ class Players(tag: Tag) extends Table[Player](tag, "players") {
   def id = column[Long]("id", O.AutoInc, O.PrimaryKey)
   def game = column[Long]("game")
   def name = column[String]("name")
+  def alias = column[String]("alias")
 
-  def * = (id, game, name) <> (Player.tupled, Player.unapply)
+  def * = (id, game, name, alias) <> (Player.tupled, Player.unapply)
 //    def ? = (id.?, gameId.?, name.?).shaped.<>({ r => r._1.map(_ => Player.tupled((r._1.get, r._2.get, r._3.get))) }, (_: Any) => throw new Exception("Inserting into ? projection not supported."))
 }
 
@@ -187,6 +188,7 @@ class Quests(tag: Tag) extends Table[Quest](tag, "quests") {
 class PlayerQuests(tag: Tag) extends Table[PlayerQuest](tag, "player_quests"){
   def quest = column[Long]("quest")
   def player = column[Long]("player")
+  def side = column[Boolean]("side")
 
   def * = (player, quest) <> (PlayerQuest.tupled, PlayerQuest.unapply)
 }
@@ -221,6 +223,44 @@ class QuestPowers(tag: Tag) extends Table[QuestPower](tag, "quest_powers"){
   def * = (quest, power) <> (QuestPower.tupled, QuestPower.unapply)
 }
 
+case class PlayerDescription(id: Long, game: Long, name: String, alias: String, mainQuest: Option[Quest], sideQuest: Option[Quest],
+                             item1: Option[Item], item2: Option[Item], item3: Option[Item], item4: Option[Item], item5: Option[Item],
+                             power1: Option[Power], power2: Option[Power], power3: Option[Power]
+                            ){
+  def items = Seq(item1, item2, item3, item4, item5).filter(_.nonEmpty).map(_.get)
+  def powers = Seq(power1, power2, power3).filter(_.nonEmpty).map(_.get)
+}
+
+object PlayerDescription {
+  def applyIds(id: Long, game: Long, name: String, alias: String, mainQuest: Option[Long], sideQuest: Option[Long],
+               item1: Option[Long], item2: Option[Long], item3: Option[Long], item4: Option[Long], item5: Option[Long],
+               power1: Option[Long], power2: Option[Long], power3: Option[Long]) = {
+    new PlayerDescription(id, game, name, alias, mainQuest.map(new Quest(_)), sideQuest.map(new Quest(_)),
+      item1.map(new Item(_)), item2.map(new Item(_)), item3.map(new Item(_)), item4.map(new Item(_)), item5.map(new Item(_)),
+      power1.map(new Power(_)), power2.map(new Power(_)), power3.map(new Power(_))
+    )
+  }
+
+  def unapplyIds(pd: PlayerDescription): Option[(Long, Long, String, String, Option[Long], Option[Long],
+    Option[Long], Option[Long], Option[Long], Option[Long], Option[Long],
+    Option[Long], Option[Long], Option[Long])] = {
+    Some(pd.id, pd.game, pd.name, pd.alias, pd.mainQuest.map(_.id), pd.sideQuest.map(_.id),
+      pd.item1.map(_.id), pd.item2.map(_.id), pd.item3.map(_.id), pd.item4.map(_.id), pd.item5.map(_.id),
+      pd.power1.map(_.id), pd.power2.map(_.id), pd.power3.map(_.id)
+    )
+  }
+
+  def apply(player: Player, mainQuest: Option[Quest], sideQuest: Option[Quest], items: Seq[Item], powers: Seq[Power]) = {
+    def maybeItem(i: Int) = if (items.size > i) Some(items(i)) else None
+    def maybePower(i: Int) = if (powers.size > i) Some(powers(i)) else None
+
+    new PlayerDescription(player.id, player.game, player.name, player.alias, mainQuest, sideQuest,
+      maybeItem(1), maybeItem(2), maybeItem(3), maybeItem(4), maybeItem(5),
+      maybePower(1), maybePower(2), maybePower(3)
+    )
+  }
+}
+
 case class QuestDescription(id: Long, name: String, description: String, game: Long,
                             item1: Option[Item], item2: Option[Item], item3: Option[Item],
                             power1: Option[Power], power2: Option[Power], power3: Option[Power]){
@@ -246,12 +286,11 @@ object QuestDescription {
   }
 
   def apply(quest: Quest, items: Seq[Item], powers: Seq[Power]) = {
-    val item1 = if (items.size > 0) Some(items(0)) else None
-    val item2 = if (items.size > 1) Some(items(1)) else None
-    val item3 = if (items.size > 2) Some(items(2)) else None
-    val power1 = if (powers.size > 0) Some(powers(0)) else None
-    val power2 = if (powers.size > 1) Some(powers(1)) else None
-    val power3 = if (powers.size > 2) Some(powers(2)) else None
-    new QuestDescription(quest.id, quest.name, quest.description, quest.game, item1, item2, item3, power1, power2, power3)
+    def maybeItem(i: Int) = if (items.size > i) Some(items(i)) else None
+    def maybePower(i: Int) = if (powers.size > i) Some(powers(i)) else None
+
+    new QuestDescription(quest.id, quest.name, quest.description, quest.game,
+      maybeItem(1), maybeItem(2), maybeItem(3),
+      maybePower(1), maybePower(2), maybePower(3))
   }
 }

@@ -3,6 +3,7 @@
 # ~~~~
 
 # An example controller showing a sample home page
+POST    /login                                             controllers.ApplicationController.login
 GET     /games/:id                                         controllers.ApplicationController.getGame(id: Long)
 POST    /games                                             controllers.ApplicationController.postGame
 
@@ -14,12 +15,14 @@ GET     /games/:gameId/powers                              controllers.Applicati
 
 GET     /games/:gameId/quests/:questId/items               controllers.ApplicationController.listItemsForQuest(gameId: Long, questId: Long)
 GET     /games/:gameId/quests/:questId/items/:id           controllers.ApplicationController.getItem(gameId: Long, questId: Long, id: Long)
-GET     /games/:gameId/quests                              controllers.ApplicationController.listQuests(gameId: Long)
+#GET     /games/:gameId/quests                              controllers.ApplicationController.listQuests(gameId: Long)
 GET     /games/:gameId/quests/:id                          controllers.ApplicationController.getQuest(gameId: Long, id: Long)
 POST    /games/:gameId/quests                              controllers.ApplicationController.postQuest(gameId: Long)
 PUT     /games/:gameId/quests/:id                          controllers.ApplicationController.putQuest(gameId: Long, id: Long)
 DELETE  /games/:gameId/quests/:id                          controllers.ApplicationController.deleteQuest(gameId: Long, id: Long)
 
+GET     /games/:gameId/players/:playerId/quest             controllers.ApplicationController.getQuestForPlayer(gameId: Long, playerId: Long)
+GET     /games/:gameId/players/:playerId/sidequest         controllers.ApplicationController.getSidequestForPlayer(gameId: Long, playerId: Long)
 GET     /games/:gameId/players/:playerId/items             controllers.ApplicationController.listItemsForPlayer(gameId: Long, playerId: Long)
 GET     /games/:gameId/players                             controllers.ApplicationController.listPlayers(gameId: Long)
 GET     /games/:gameId/players/:id                         controllers.ApplicationController.getPlayer(gameId: Long, id: Long)
@@ -34,6 +37,10 @@ POST    /form/games/:gameId                                controllers.FormContr
 GET     /form/games/:gameId/quests                         controllers.FormController.listQuests(gameId: Long)
 GET     /form/games/:gameId/quests/:questId                controllers.FormController.showQuestForm(gameId: Long, questId: Long)
 POST    /form/games/:gameId/quests/:questId                controllers.FormController.updateQuest(gameId: Long, questId: Long)
+
+GET     /form/games/:gameId/players                        controllers.FormController.listPlayers(gameId: Long)
+GET     /form/games/:gameId/players/:playerId              controllers.FormController.showPlayerForm(gameId: Long, playerId: Long)
+POST    /form/games/:gameId/players/:playerId              controllers.FormController.updatePlayer(gameId: Long, playerId: Long)
 
 GET     /form/games/:gameId/items                          controllers.FormController.listItems(gameId: Long)
 GET     /form/games/:gameId/items/:id                      controllers.FormController.showItemForm(gameId: Long, id: Long)

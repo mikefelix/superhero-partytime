@@ -1,4 +1,4 @@
-@(id: Long, game: Game, items: Seq[(String, String)], powers: Seq[(String, String)], form: Form[models.QuestDescription])(implicit flash: Flash, messages: Messages)
+@(id: Long, game: Game, allItems: Seq[(String, String)], allPowers: Seq[(String, String)], form: Form[models.QuestDescription])(implicit flash: Flash, messages: Messages)
 
 @main(Some(game)) {
     <h2>Quest management</h2>
@@ -19,15 +19,15 @@
 
         <h3>Required items</h3>
 
-        @helper.select(form("item1"), items, '_label -> "item 1", '_default -> "-- Select item --", '_showConstraints -> false)
-        @helper.select(form("item2"), items, '_label -> "item 2", '_default -> "-- Select item --", '_showConstraints -> false)
-        @helper.select(form("item3"), items, '_label -> "item 3", '_default -> "-- Select item --", '_showConstraints -> false)
+        @helper.select(form("item1"), allItems, '_label -> "item 1", '_default -> "-- Select item --", '_showConstraints -> false)
+        @helper.select(form("item2"), allItems, '_label -> "item 2", '_default -> "-- Select item --", '_showConstraints -> false)
+        @helper.select(form("item3"), allItems, '_label -> "item 3", '_default -> "-- Select item --", '_showConstraints -> false)
 
         <h3>Required powers</h3>
 
-        @helper.select(form("power1"), powers, '_label -> "power 1", '_default -> "-- Select power --", '_showConstraints -> false)
-        @helper.select(form("power2"), powers, '_label -> "power 2", '_default -> "-- Select power --", '_showConstraints -> false)
-        @helper.select(form("power3"), powers, '_label -> "power 3", '_default -> "-- Select power --", '_showConstraints -> false)
+        @helper.select(form("power1"), allPowers, '_label -> "power 1", '_default -> "-- Select power --", '_showConstraints -> false)
+        @helper.select(form("power2"), allPowers, '_label -> "power 2", '_default -> "-- Select power --", '_showConstraints -> false)
+        @helper.select(form("power3"), allPowers, '_label -> "power 3", '_default -> "-- Select power --", '_showConstraints -> false)
 
         <p><button type="submit" style="padding: 15px">Submit</button></p>
     }

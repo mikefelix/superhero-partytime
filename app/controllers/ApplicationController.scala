@@ -2,19 +2,22 @@ package controllers
 
 import javax.inject.Inject
 
-import models._
+import models.{PartyDAO => dao, _}
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import play.api.mvc.{Action, AnyContent, Controller, Request}
-import services.Auth
+import play.api.libs.json.JsValue
 import play.api.libs.json.Json.{toJsFieldJsValueWrapper => js}
+import play.api.mvc._
+import services.Auth
 
 import scala.concurrent.Future
-import models.{PartyDAO => dao}
-import play.api.libs.json.JsValue
 
 class ApplicationController @Inject()(auth: Auth) extends Controller {
 
   implicit def futurize[A](a: A): Future[A] = Future successful a
+
+  def login = Action { implicit req =>
+    Ok(s"""{"player":1}""")
+  }
 
   def postGame = Action.async { implicit req =>
     req.body.asJson.asGame match {
@@ -57,6 +60,7 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
     }
   }
 
+/*
   def listQuests(gameId: Long) = Action.async { implicit req =>
     req.player match {
       case Some(playerId) =>
@@ -69,6 +73,7 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
         }
     }
   }
+*/
 
   def listPlayers(gameId: Long) = Action.async { implicit req =>
     for (players <- dao.findPlayersByGame(gameId)) yield Ok(players.toJson)
@@ -95,11 +100,43 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
   }
 
   def listItemsForPlayer(gameId: Long, playerId: Long) = Action.async { implicit req =>
-    req.player match {
+    Some(playerId) match {//req.player match {
       case Some(id) if playerId == id =>
         for {
           items <- dao.findItemsByPlayer(playerId)
         } yield Ok(items.toJson)
+      case _ => Unauthorized
+    }
+  }
+
+  def getQuestForPlayer(gameId: Long, playerId: Long) = Action.async { implicit req =>
+    Some(playerId) match {//req.player match {
+      case Some(id) if playerId == id =>
+        val quest = for {
+          questOpt <- dao.findQuestDescByPlayer(playerId)
+          quest <- questOpt
+        } yield quest
+
+        quest map {
+          case Some(q) => Ok(q.toJson)
+          case None => NotFound
+        }
+      case _ => Unauthorized
+    }
+  }
+
+  def getSidequestForPlayer(gameId: Long, playerId: Long) = Action.async { implicit req =>
+    Some(playerId) match {//req.player match {
+      case Some(id) if playerId == id =>
+        val quest = for {
+          questOpt <- dao.findQuestDescByPlayer(playerId, side = true)
+          quest <- questOpt
+        } yield quest
+
+        quest map {
+          case Some(q) => Ok(q.toJson)
+          case None => NotFound
+        }
       case _ => Unauthorized
     }
   }
@@ -129,18 +166,14 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
   }
 
   def getPower(gameId: Long, questId: Long, id: Long) = Action.async { implicit req =>
-    for {
-      power <- dao.findPowerById(id)
-    } yield power match {
+    dao.findPowerById(id) map {
       case Some(power) => Ok(power.toJson())
       case None => NotFound
     }
   }
 
   def getPower(gameId: Long, id: Long) = Action.async { implicit req =>
-    for {
-      power <- dao.findPowerById(id)
-    } yield power match {
+    dao.findPowerById(id) map {
       case Some(power) => Ok(power.toJson())
       case None => NotFound
     }
@@ -149,11 +182,14 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
   def getPowers(gameId: Long) = Action.async { implicit req =>
     for {
       power <- dao.findPowersByGame(gameId)
-    } yield Ok(power.toJson)  //(views.html.quest(quest, powers))
+    } yield Ok(power.toJson)
   }
 
   def getPlayer(gameId: Long, id: Long) = Action.async { implicit req =>
-    for (player <- dao.findPlayerById(id)) yield Ok(player.toJson())
+    dao.findPlayerDescById(id) map {
+      case Some(player) => Ok(player.toJson)
+      case None => NotFound
+    }
   }
 
   def postPlayer(gameId: Long) = Action.async { implicit req =>
@@ -204,6 +240,69 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
         |}
       """.stripMargin
 
+  implicit def questDescToString(quest: QuestDescription): String = {
+    val items = quest.items.map { item =>
+      s"""{ "name":"${item.name}",
+         |  "description":"${item.description}",
+         |  "id":${item.id}
+         |}
+       """.stripMargin
+    }
+    
+    val powers = quest.powers.map { power =>
+      s"""{ "name":"${power.name}",
+         |  "description":"${power.description}",
+         |  "id":${power.id}
+         |}
+       """.stripMargin
+    }
+    
+    s"""{
+        | "id":${quest.id},
+        | "name":"${quest.name.replace("\"", "\\\"")}",
+        | "description":"${quest.description.replace("\"", "\\\"")}",
+        | "items":[${items.mkString(",")}],
+        | "powers":[${powers.mkString(",")}]
+        |}
+      """.stripMargin
+  }
+
+
+  implicit class QuestDescriptionToJson(quest: QuestDescription) {
+    def toJson: String = questDescToString(quest)
+  }
+ 
+  implicit def playerDescToString(player: PlayerDescription): String = {
+    val items = player.items.map { item =>
+      s"""{ "name":"${item.name}",
+         |  "description":"${item.description}",
+         |  "id":${item.id}
+         |}
+       """.stripMargin
+    }
+    
+    val powers = player.powers.map { power =>
+      s"""{ "name":"${power.name}",
+         |  "description":"${power.description}",
+         |  "id":${power.id}
+         |}
+       """.stripMargin
+    }
+    
+    s"""{
+        | "id":${player.id},
+        | "name":"${player.name.replace("\"", "\\\"")}",
+        | "alias":"${player.alias.replace("\"", "\\\"")}",
+        | "items":[${items.mkString(",")}],
+        | "powers":[${powers.mkString(",")}]
+        |}
+      """.stripMargin
+  }
+
+
+  implicit class PlayerDescriptionToJson(player: PlayerDescription) {
+    def toJson: String = playerDescToString(player)
+  }
 
   implicit class QuestAndItemsToJson(t: (Quest, Seq[Item])) {
     def toJson: String = {

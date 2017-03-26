@@ -1,0 +1,37 @@
+@(id: Long, form: Form[models.PlayerDescription], game: Game, allItems: Seq[(String, String)], allPowers: Seq[(String, String)], allQuests: Seq[(String,String)])(implicit flash: Flash, messages: Messages)
+
+@main(Some(game)) {
+    <h2>Player management</h2>
+    <h3>@flash.get("error").getOrElse("")</h3>
+
+    @helper.form(routes.FormController.updatePlayer(game.id, id)) {
+        @if(form.hasGlobalErrors) {
+            <p class="error">
+            @form.globalError.get.message
+            </p>
+        }
+
+        @helper.inputText(form("name"))
+
+        @helper.select(form("quest"), allQuests, '_label -> "Current quest", '_default -> "-- Select quest --", '_showConstraints -> false)
+
+        @helper.select(form("item1"), allItems, '_label -> "Item 1", '_default -> "-- Select item --", '_showConstraints -> false)
+
+        @helper.select(form("item2"), allItems, '_label -> "Item 2", '_default -> "-- Select item --", '_showConstraints -> false)
+
+        @helper.select(form("item3"), allItems, '_label -> "Item 3", '_default -> "-- Select item --", '_showConstraints -> false)
+
+        @helper.select(form("item4"), allItems, '_label -> "Item 4", '_default -> "-- Select item --", '_showConstraints -> false)
+
+        @helper.select(form("item5"), allItems, '_label -> "Item 5", '_default -> "-- Select item --", '_showConstraints -> false)
+
+        @helper.select(form("power1"), allPowers, '_label -> "Power 1", '_default -> "-- Select power --", '_showConstraints -> false)
+
+        @helper.select(form("power2"), allPowers, '_label -> "Power 2", '_default -> "-- Select power --", '_showConstraints -> false)
+
+        @helper.select(form("power3"), allPowers, '_label -> "Power 3", '_default -> "-- Select power --", '_showConstraints -> false)
+
+        <p><button type="submit">Submit</button></p>
+    }
+
+}

@@ -19,16 +19,19 @@ create table quests (
 );
 
 insert into quests(game, name, description) values (1, 'Petition the goddess', 'Petition her!');
+insert into quests(game, name, description) values (1, 'Find the lost city of Fatlantis', 'It''s somewhere.');
 
 create table players (
   id serial primary key,
   game integer not null references games("id"),
   name varchar(128) not null,
+  alias varchar(128) not null,
   created timestamptz not null default now(),
   updated timestamptz not null default now()
 );
 
-insert into players(game, name) values (1, 'Mr. Buttkix');
+insert into players(game, alias, name) values (1, 'Brandon', 'Mr. Buttkix');
+insert into players(game, alias, name) values (1, 'Kimberly', 'Ms. Firelips');
 
 create table items (
   id serial primary key,
@@ -58,10 +61,15 @@ insert into powers(game, name, description) values (1, 'Speak with dirt', 'The a
 create table player_quests (
   quest integer not null references quests("id"),
   player integer not null references players("id"),
-  primary key (quest, player)
+  side boolean not null,
+  primary key (quest, player, side)
 );
 
-insert into player_quests (quest, player) values (1, 1);
+insert into player_quests (quest, player, side) values (1, 1, false);
+insert into player_quests (quest, player, side) values (2, 2, false);
+
+insert into player_quests (quest, player, side) values (2, 1, true);
+insert into player_quests (quest, player, side) values (1, 2, true);
 
 create table player_powers (
   power integer not null references powers("id"),

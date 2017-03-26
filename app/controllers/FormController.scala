@@ -2,15 +2,13 @@ package controllers
 
 import javax.inject._
 
-import models._
-import play.api.{Configuration, Logger}
+import models.PartyDAO._
+import models.{PartyDAO => dao, _}
 import play.api.data.Forms._
 import play.api.data._
 import play.api.i18n.{I18nSupport, MessagesApi}
 import play.api.mvc._
-
-import models.PartyDAO._
-import models.{PartyDAO => dao}
+import play.api.{Configuration, Logger}
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
@@ -32,6 +30,25 @@ class FormController @Inject()(implicit configuration: Configuration, val messag
       "id" -> ignored(0L),
       "name" -> text
     )(Game.apply)(Game.unapply)
+  )
+
+  val playerForm = Form(
+    mapping(
+      "id" -> ignored(0L),
+      "game" -> ignored(0L),
+      "name" -> text,
+      "alias" -> text,
+      "mainQuest" -> optional(longNumber),
+      "sideQuest" -> optional(longNumber),
+      "item1" -> optional(longNumber),
+      "item2" -> optional(longNumber),
+      "item3" -> optional(longNumber),
+      "item4" -> optional(longNumber),
+      "item5" -> optional(longNumber),
+      "power1" -> optional(longNumber),
+      "power2" -> optional(longNumber),
+      "power3" -> optional(longNumber)
+    )(PlayerDescription.applyIds)(PlayerDescription.unapplyIds)
   )
 
   val powerForm = Form(
@@ -93,6 +110,15 @@ class FormController @Inject()(implicit configuration: Configuration, val messag
     }
   }
 
+  def listPlayers(gameId: Long) = Action.async { implicit request =>
+    withGame(gameId) { game =>
+      findPlayerDescsByGame(game.id) flatMap { players =>
+        println(s"Player 1 has ${players(0).items.size} items.")
+        Ok(views.html.players(players, game))
+      }
+    }
+  }
+
   def showQuestForm(gameId: Long, questId: Long) = Action.async { implicit request =>
     withGame(gameId) { game =>
       val quest = if (questId < 1)
@@ -105,8 +131,8 @@ class FormController @Inject()(implicit configuration: Configuration, val messag
           findItemsByGame(gameId) flatMap { items =>
             findPowersByGame(gameId) flatMap { powers =>
               Ok(views.html.quest(questId, game,
-                items.map( item => (item.id.toString, s"${item.name} (${item.description})")),
-                powers.map( power => (power.id.toString, s"${power.name} (${power.description})")),
+                items.map( item => item.id.toString -> s"${item.name} (${item.description})" ),
+                powers.map( power => power.id.toString -> s"${power.name} (${power.description})" ),
                 questForm.fill(q)))
             }
           }
@@ -115,34 +141,48 @@ class FormController @Inject()(implicit configuration: Configuration, val messag
     }
   }
 
-/*
-  def insertQuest(gameId: Long) = Action.async { implicit request =>
-    println(s"Insert quest for $gameId")
+  def showPlayerForm(gameId: Long, playerId: Long) = Action.async { implicit request =>
     withGame(gameId) { game =>
-      questForm.bindFromRequest.fold(
-        formWithErrors => {
-          findItemsByGame(gameId) flatMap { items =>
-            findPowersByGame(gameId) flatMap { powers =>
-              Future successful BadRequest(views.html.quest(0L, game,
-                items.map( item => (item.id.toString, item.name)),
-                powers.map( power => (power.id.toString, power.name)),
-                formWithErrors))
+      val playerById = if (playerId < 1)
+        Future(Some(PlayerDescription(playerId, game.id, "", "", None, None, None, None, None, None, None, None, None, None)))
+      else
+        findPlayerDescById(playerId)
+
+      playerById flatMap {
+        case None => NotFound
+        case Some(player) =>
+          findQuestsByGame(game.id) flatMap { allQuests =>
+            findItemsByGame(game.id) flatMap { allItems =>
+              findPowersByGame(game.id) flatMap { allPowers =>
+                val form = playerForm.fill(player)
+                val questSelect = allQuests.map( q => q.id.toString -> s"${q.name}" )
+                val itemSelect = allItems.map( i => i.id.toString -> s"${i.name}" )
+                val powerSelect = allPowers.map( p => p.id.toString -> s"${p.name}" )
+                Ok(views.html.player(playerId, form, game, itemSelect, powerSelect, questSelect))
+              }
             }
           }
+      }
+    }
+  }
+
+  def updatePlayer(gameId: Long, playerId: Long) = Action.async { implicit request =>
+    withGame(gameId) { game =>
+      playerForm.bindFromRequest.fold(
+        formWithErrors => {
+          Redirect(routes.FormController.showPlayerForm(gameId, playerId))
+            .flashing("error" -> formWithErrors.errors.map(_.message).mkString(", "))
         },
-        quest => {
-          dao.insertQuest(quest.copy(game = gameId)) map { res =>
-            // TODO: return the right ID from the DAO
-            Redirect(routes.FormController.listQuests(gameId))
+        player => {
+          dao.updatePlayerWithQuest(player) map { u =>
+            Ok
           }
         }
       )
     }
   }
-*/
 
   def updateQuest(gameId: Long, questId: Long) = Action.async { implicit request =>
-    println(s"Update quest $questId")
     withGame(gameId) { game =>
       questForm.bindFromRequest.fold(
         formWithErrors => {

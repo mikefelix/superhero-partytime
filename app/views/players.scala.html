@@ -1,0 +1,34 @@
+@(players: Seq[PlayerDescription], game: Game)(implicit flash: play.api.mvc.Flash, messages: Messages)
+
+@****************************************
+* Helper generating navigation links    *
+****************************************@
+@link(playerId: Long) = @{
+    routes.FormController.showPlayerForm(game.id, playerId)
+}
+
+@main(Some(game)) {
+    <h2>Players</h2>
+
+    <h3>@flash.get("error").getOrElse("")</h3>
+    <a href="@routes.FormController.showPlayerForm(game.id, 0)">New player</a>
+
+    <hr/>
+    @players.map { p =>
+            <h3><a href="@link(p.id)">@p.name</a></h3>
+            @if(p.mainQuest.nonEmpty) {
+                <div style="margin-bottom: 10px">Quest: <a href="@routes.FormController.showQuestForm(game.id, p.mainQuest.get.id)">@p.mainQuest.get.name</a></div>
+            }
+
+            <ul>
+                @p.items.map { item =>
+                    <li>Item: <a href="@routes.FormController.showItemForm(game.id, item.id)">@item.name</a> (@item.description)</li>
+                }
+                @p.powers.map { power =>
+                    <li>Power: <a href="@routes.FormController.showPowerForm(game.id, power.id)">@power.name</a> (@power.description)</li>
+                }
+            </ul>
+        <hr/>
+    }
+
+}
