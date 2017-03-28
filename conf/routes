@@ -50,8 +50,8 @@ GET     /form/games/:gameId/powers                         controllers.FormContr
 GET     /form/games/:gameId/powers/:id                     controllers.FormController.showPowerForm(gameId: Long, id: Long)
 POST    /form/games/:gameId/powers/:id                     controllers.FormController.updatePower(gameId: Long, id: Long)
 
-GET     /login                                             controllers.FormController.login()
-POST    /login                                             controllers.FormController.authenticate()
+GET     /                                                  controllers.FormController.login()
+POST    /form/login                                        controllers.FormController.authenticate()
 
 # Map static resources from the /public folder to the /assets URL path
 #GET     /assets/*file                                      controllers.Assets.versioned(path="/public", file: Asset)

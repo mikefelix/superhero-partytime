@@ -265,8 +265,8 @@ object PlayerDescription {
     def maybePower(i: Int) = if (powers.size > i) Some(powers(i)) else None
 
     new PlayerDescription(player.id, player.game, player.name, player.alias, mainQuest, sideQuest,
-      maybeItem(1), maybeItem(2), maybeItem(3), maybeItem(4), maybeItem(5),
-      maybePower(1), maybePower(2), maybePower(3)
+      maybeItem(0), maybeItem(1), maybeItem(2), maybeItem(3), maybeItem(4),
+      maybePower(0), maybePower(1), maybePower(2)
     )
   }
 }

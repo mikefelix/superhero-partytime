@@ -92,11 +92,11 @@ class FormController @Inject()(implicit configuration: Configuration, val messag
   def authenticate = Action { implicit request =>
     loginForm.bindFromRequest.fold(
       formWithErrors => {
-        Logger.warn(s"Error authenticating user with data ${formWithErrors.data}:\n${formWithErrors.errors.map(err => err.key + ": " + err.message).mkString("/")}")
+        println(s"Error authenticating user with data ${formWithErrors.data}:\n${formWithErrors.errors.map(err => err.key + ": " + err.message).mkString("/")}")
         BadRequest(views.html.login(formWithErrors))
       },
       userData => {
-        Logger.info(s"Authenticated user ${userData.login} with headers ${request.headers}")
+        println(s"Authenticated user ${userData.login} with headers ${request.headers}")
         Redirect(routes.FormController.listGames()).withNewSession.withSession("login" -> userData.login)
       }
     )
@@ -113,7 +113,6 @@ class FormController @Inject()(implicit configuration: Configuration, val messag
   def listPlayers(gameId: Long) = Action.async { implicit request =>
     withGame(gameId) { game =>
       findPlayerDescsByGame(game.id) flatMap { players =>
-        println(s"Player 1 has ${players(0).items.size} items.")
         Ok(views.html.players(players, game))
       }
     }

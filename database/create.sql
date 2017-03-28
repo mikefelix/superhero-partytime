@@ -45,6 +45,8 @@ create table items (
 
 insert into items(game, name, description) values (1, 'Lost fragment', 'A fragment without an owner');
 insert into items(game, name, owner, description) values (1, 'Found fragment', 1, 'A fragment with an owner');
+insert into items(game, name, owner, description) values (1, 'Quantum shovel', 1, 'A shovel');
+insert into items(game, name, owner, description) values (1, 'Blue lizard', 2, 'A lizard');
 
 create table powers (
   id serial primary key,
@@ -78,6 +80,7 @@ create table player_powers (
 );
 
 insert into player_powers (power, player) values (1, 1);
+insert into player_powers (power, player) values (2, 2);
 
 create table quest_items (
   quest integer not null references quests("id"),

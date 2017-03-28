@@ -76,7 +76,7 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
 */
 
   def listPlayers(gameId: Long) = Action.async { implicit req =>
-    for (players <- dao.findPlayersByGame(gameId)) yield Ok(players.toJson)
+    for (players <- dao.findPlayerDescsByGame(gameId)) yield Ok(players.toJson)
   }
 
   def getQuest(gameId: Long, id: Long) = Action.async { implicit req =>
@@ -265,29 +265,25 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
  
   implicit def playerDescToString(player: PlayerDescription): String = {
     val items = player.items.map { item =>
-      s"""{ "name":"${item.name}",
-         |  "description":"${item.description}",
-         |  "id":${item.id}
-         |}
-       """.stripMargin
+      s"""{"name":"${item.name}",
+         | "description":"${item.description}",
+         | "id":${item.id}
+         |}""".stripMargin
     }
 
     val powers = player.powers.map { power =>
-      s"""{ "name":"${power.name}",
-         |  "description":"${power.description}",
-         |  "id":${power.id}
-         |}
-       """.stripMargin
+      s"""{"name":"${power.name}",
+         | "description":"${power.description}",
+         | "id":${power.id}
+         |}""".stripMargin
     }
     
-    s"""{
-        | "id":${player.id},
+    s"""{"id":${player.id},
         | "name":"${player.name.replace("\"", "\\\"")}",
         | "alias":"${player.alias.replace("\"", "\\\"")}",
         | "items":[${items.mkString(",")}],
         | "powers":[${powers.mkString(",")}]
-        |}
-      """.stripMargin
+        |}""".stripMargin
   }
 
 
@@ -334,6 +330,10 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
 
   implicit class PlayersToJson(players: Seq[Player]) {
     def toJson: String = "[" + players.map(_.toJson()).mkString(",") + "]"
+  }
+
+  implicit class PlayerDescsToJson(players: Seq[PlayerDescription]) {
+    def toJson: String = "[" + players.map(_.toJson).mkString(",") + "]"
   }
 
   implicit class ModelFromBody(body: Option[JsValue]) {
