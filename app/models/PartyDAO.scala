@@ -339,12 +339,26 @@ object PartyDAO {
 
   def findLatestChats(gameId: Long, playerId: Long, num: Int): Future[Seq[ChatDetail]] = {
     val q = for {
-      (chat, poster) <- chats.sortBy(_.id) joinLeft players on (_.poster === _.id)
-      if chat.game === gameId && (chat.recipient.isEmpty || chat.recipient === playerId)
+      chat <- chats.sortBy(_.id) if chat.game === gameId && chat.poster.nonEmpty
+      poster <- players if poster.id === chat.poster
     } yield (chat, poster)
 
-    db.run(q.take(num).result) map { (seq: Seq[(Chat, Option[Player])]) =>
-      seq map { case (msg, poster) => ChatDetail(msg, poster)}
+    db.run(q.take(num).result) map { (seq: Seq[(Chat, Player)]) =>
+      seq map { case (msg, poster) => ChatDetail(msg, Some(poster))}
+    }
+  }
+
+  def clearAlert(id: Long) = {
+    db.run(chats.filter(_.id === id).delete)
+  }
+
+  def findAlerts(gameId: Long, playerId: Long): Future[Seq[ChatDetail]] = {
+    val q = for {
+      chat <- chats.sortBy(_.id) if chat.game === gameId && chat.recipient === playerId && chat.poster.isEmpty
+    } yield chat
+
+    db.run(q.result) map { (seq: Seq[Chat]) =>
+      seq map (msg => ChatDetail(msg, None))
     }
   }
 

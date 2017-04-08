@@ -119,6 +119,18 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
     }
   }
 
+  def getAlerts(gameId: Long, playerId: Long) = Action.async { implicit req =>
+    dao.findAlerts(gameId, playerId) map { chats =>
+      Ok(chats.toJson)
+    }
+  }
+
+  def clearAlert(gameId: Long, playerId: Long, id: Long) = Action.async { implicit req =>
+    dao.clearAlert(id) map { res =>
+      NoContent
+    }
+  }
+
   def listTradesForPlayer(gameId: Long, playerId: Long) = Action.async { implicit req =>
     for {
       offersGiven <- dao.findTradesByOfferer(gameId)

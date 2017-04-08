@@ -38,6 +38,8 @@ PUT     /games/:gameId/players/:playerId/trades/:tradeId   controllers.Applicati
 
 GET     /games/:gameId/players/:playerId/chats             controllers.ApplicationController.getLatestChats(gameId: Long, playerId: Long)
 POST    /games/:gameId/players/:playerId/chats             controllers.ApplicationController.postChat(gameId: Long, playerId: Long)
+GET     /games/:gameId/players/:playerId/alerts            controllers.ApplicationController.getAlerts(gameId: Long, playerId: Long)
+DELETE  /games/:gameId/players/:playerId/alerts/:id        controllers.ApplicationController.clearAlert(gameId: Long, playerId: Long, id: Long)
 
 GET     /form/games                                        controllers.FormController.listGames
 GET     /form/games/:gameId                                controllers.FormController.showGameForm(gameId: Long)
