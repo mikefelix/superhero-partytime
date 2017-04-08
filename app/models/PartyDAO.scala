@@ -1,11 +1,14 @@
 package models
 
+import java.sql.Date
+
 import play.api.Play.current
 import play.api.db.DB
 import slick.driver.PostgresDriver.api._
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
+import scala.util.Random.shuffle
 
 object PartyDAO {
   val db = Database.forDataSource(DB.getDataSource())
@@ -13,12 +16,99 @@ object PartyDAO {
   val quests = TableQuery[Quests]
   val games = TableQuery[Games]
   val players = TableQuery[Players]
+  val chats  = TableQuery[Chats]
   val items = TableQuery[Items]
   val powers = TableQuery[Powers]
+  val trades = TableQuery[Trades]
   val playerQuests = TableQuery[PlayerQuests]
   val questItems = TableQuery[QuestItems]
   val questPowers = TableQuery[QuestPowers]
   val playerPowers = TableQuery[PlayerPowers]
+
+  def resetGame(game: Game) = {
+    // TODO: restrict everything to this game.
+
+    db.run(DBIO.seq(
+      items.map(_.owner).update(None),
+      playerPowers.delete,
+      playerQuests.delete
+//      players.delete
+    ))
+  }
+
+  def initGame(game: Game) = {
+    val gameId = game.id
+    val elements = for {
+      pl <- findPlayersByGame(gameId)
+      it <- findItemsByGame(gameId)
+      po <- findPowersByGame(gameId)
+      qu <- findQuestsByGame(gameId)
+    } yield (pl, it, po, qu)
+
+    elements foreach {
+      case (players, items, powers, quests) =>
+        // Give out all the items
+        distributeEvenly(items, players) { (item, player) =>
+          println(s"Giving item ${item.name} to ${player.alias}")
+          updateItem(item.copy(owner = Some(player.id)))
+        }
+
+        // Give everyone powers, making sure all powers are given twice
+        distributeEvenly(powers, players, 2) { (power, player) =>
+          println(s"Giving power ${power.name} to ${player.alias}")
+          insertPlayerPower(player.id, power.id)
+        }
+
+        distributeEvenly(players, quests) { (player, quest) =>
+          // TODO: prevent people from getting the quest that needs the item or power they already have
+          println(s"Giving quest ${quest.name} to ${player.alias}")
+          insertPlayerQuest(player.id, quest.id, side = false)
+        }
+
+      case _ => throw new IllegalStateException("Can't init game.")
+    }
+
+    // Restrict certain people from other certain people
+
+  }
+
+/*
+  private def giveEach[I, P](toDistribute: Seq[I], distributeAmong: Seq[P], eachGets: Int)(give: (I, P) => Unit) = {
+    val items = circularIterator(toDistribute)
+    for (i <- 1 to eachGets){
+      val receivers = shuffle(distributeAmong)
+      receivers.foreach { receiver =>
+        val item = items.next()
+        give(item, receiver)
+      }
+    }
+  }
+*/
+
+  private def distributeEvenly[I, P](toDistribute: Seq[I], distributeAmong: Seq[P], copies: Int = 1)(give: (I, P) => Unit) = {
+    val receivers = circularIterator(shuffle(distributeAmong))
+    shuffle(toDistribute).foreach { item =>
+      for (i <- 1 to copies){
+        val receiver = receivers.next()
+        give(item, receiver)
+      }
+    }
+  }
+
+  private def circularIterator[X](iterable: Iterable[X]): Iterator[X] = {
+    var it = iterable.iterator
+    new Iterator[X] {
+      override def hasNext = iterable.nonEmpty
+
+      override def next() = if (it.hasNext)
+        it.next
+      else {
+        it = iterable.iterator
+        it.next
+      }
+
+    }
+  }
 
   def allQuests: Future[Seq[Quest]] = db.run(quests.result)
   def findQuestById(id: Long): Future[Option[Quest]] = db.run(questById(id).result.headOption)
@@ -97,7 +187,48 @@ object PartyDAO {
     }
   }
 
-  def insertPlayer(player: Player): Future[Int] = db.run(players += player)
+  def insertTrade(trade: Trade): Future[Int] = {
+    println(s"Insert trade ${trade.toJson()}")
+    if (trade.offererItem.nonEmpty){
+      findItemById(trade.offererItem.get) flatMap {
+        case None => throw new IllegalStateException()
+        case Some(offererItem) =>
+          if (trade.offereeItem.nonEmpty){
+            findItemById(trade.offereeItem.get) flatMap {
+              case None => throw new IllegalStateException()
+              case Some(offereeItem) =>
+                // Insert trade with two items
+                db.run(trades += trade.copy(offererOther = Some(offererItem.name), offereeOther = Some(offereeItem.name)))
+            }
+          }
+          else {
+            // Insert trade with item from offerer
+            db.run(trades += trade.copy(offererOther = Some(offererItem.name)))
+          }
+      }
+    }
+    else if (trade.offereeItem.nonEmpty){
+      findItemById(trade.offereeItem.get) flatMap {
+        case None => throw new IllegalStateException()
+        case Some(offereeItem) =>
+          // Insert trade with offeree item
+          db.run(trades += trade.copy(offereeOther = Some(offereeItem.name)))
+          addSystemChat(trade.game, trade.offeree, "Trade request from ")
+      }
+    }
+    else {
+      // Insert trade with no items
+      db.run(trades += trade)
+    }
+  }
+
+  def updateTrade(trade: Trade): Future[Int] = db.run(tradeById(trade.id).update(trade))
+
+  def insertPlayer(player: Player): Future[Player] = {
+    val insertQuery = players returning players.map(_.id) into ((player, id) => player.copy(id = id))
+    db.run(insertQuery += player)
+  }
+
   def deletePlayer(id: Long): Future[Int] = db.run(playerById(id).delete)
   def updatePlayer(player: Player): Future[Int] = db.run(playerById(player.id).update(player))
   def updatePlayerWithQuest(playerDesc: PlayerDescription) = db.run {
@@ -132,6 +263,11 @@ object PartyDAO {
   def insertGame(game: Game): Future[Int] = db.run(games += game)
   def updateGame(game: Game): Future[Int] = db.run(gameById(game.id).update(game))
   def findGameById(id: Long): Future[Option[Game]] = db.run(gameById(id).result.headOption)
+  def findStartedGameById(id: Long): Future[Option[Game]] = db.run(gameById(id, started = true).result.headOption)
+
+  def findTradeById(id: Long): Future[Option[Trade]] = db.run(tradeById(id).result.headOption)
+  def findTradesByOfferer(playerId: Long): Future[Seq[Trade]] = db.run(tradesByOfferer(playerId).result)
+  def findTradesByOfferee(playerId: Long): Future[Seq[Trade]] = db.run(tradesByOfferee(playerId).result)
 
   def findItemById(id: Long): Future[Option[Item]] = db.run(itemById(id).result.headOption)
   def findItemsByPlayer(playerId: Long): Future[Seq[Item]] = db.run(itemsByPlayer(playerId).result)
@@ -139,8 +275,10 @@ object PartyDAO {
   def findItemsByGame(gameId: Long): Future[Seq[Item]] = db.run(itemsByGame(gameId).result)
   def findItemsHeldByPlayers(questId: Long): Future[Seq[Item]] = db.run(itemsHeldByPlayers(questId).result)
 
-  def findQuestByPlayer(playerId: Long, side: Boolean): Future[Option[Quest]] = db.run(questsByPlayer(playerId, side).result.headOption)
+  def findQuestByPlayer(playerId: Long, side: Boolean): Future[Option[Quest]] = db.run(currentQuestsByPlayer(playerId, side).result.headOption)
   def findPlayersByQuest(questId: Long): Future[Seq[Player]] = db.run(playersByQuest(questId).result)
+  def findMasterForQuest(questId: Long): Future[Option[Player]] = db.run(playersByQuest(questId, main = Some(true)).result.headOption)
+  def findAllyForQuest(questId: Long): Future[Option[Player]] = db.run(playersByQuest(questId, main = Some(false)).result.headOption)
 
   def findPowerById(id: Long): Future[Option[Power]] = db.run(powerById(id).result.headOption)
   def findPowersByPlayer(playerId: Long): Future[Seq[Power]] = db.run(powersByPlayer(playerId).result)
@@ -159,6 +297,28 @@ object PartyDAO {
   def updatePower(power: Power): Future[Int] = db.run(powers.filter(_.id === power.id).update(power))
   def deletePower(id: Long): Future[Int] = db.run(powerById(id).delete)
 
+  def findLatestChats(gameId: Long, playerId: Long, num: Int): Future[Seq[ChatDetail]] = {
+    val fut = for {
+      ch <- db.run(
+        chats.sortBy(_.id.desc).filter(chat =>
+          chat.game === gameId && (chat.recipient.isEmpty || chat.recipient === playerId)).take(num).result)
+      pl <- findPlayerById(playerId)
+    } yield (ch, pl)
+
+    fut map {
+      case (msgs, Some(poster)) =>
+        msgs map { msg => ChatDetail(msg, poster)}
+    }
+  }
+
+  def addUserChat(gameId: Long, sender: Long, recipient: Option[Long], chat: String) = {
+    db.run(chats += Chat(0L, gameId, Some(sender), recipient, chat, new Date(new java.util.Date().getTime)))
+  }
+
+  def addSystemChat(gameId: Long, recipient: Long, chat: String) = {
+    db.run(chats += Chat(0L, gameId, None, Some(recipient), chat, new Date(new java.util.Date().getTime)))
+  }
+
   def findQuestDescById(id: Long): Future[Option[QuestDescription]] = {
     findQuestById(id) flatMap {
       case Some(quest) =>
@@ -167,27 +327,133 @@ object PartyDAO {
           powersNeeded <- findPowersByQuest(quest.id)
           itemsHeld <- findItemsHeldByPlayers(quest.id)
           powersHeld <- findPowersHeldByPlayers(quest.id)
+          Some(master) <- findMasterForQuest(quest.id)
           itemsForQuest = getItemsNeeded(itemsNeeded, itemsHeld)
           powersForQuest = getPowersNeeded(powersNeeded, powersHeld)
-        } yield Some(QuestDescription(quest, itemsForQuest, powersForQuest))
+        } yield Some(QuestDescription(quest, master, itemsForQuest, powersForQuest))
 
       case None => Future(None)
     }
   }
 
-  def findQuestDescByPlayer(id: Long, side: Boolean = false): Future[Option[QuestDescription]] = {
-    findQuestByPlayer(id, side) flatMap {
-      case Some(quest) =>
-        for {
-          itemsNeeded <- findItemsByQuest(quest.id)
-          powersNeeded <- findPowersByQuest(quest.id)
-          itemsHeld <- findItemsHeldByPlayers(quest.id)
-          powersHeld <- findPowersHeldByPlayers(quest.id)
-          itemsForQuest = getItemsNeeded(itemsNeeded, itemsHeld)
-          powersForQuest = getPowersNeeded(powersNeeded, powersHeld)
-        } yield Some(QuestDescription(quest, itemsForQuest, powersForQuest))
+  def findCurrentQuestDescByPlayer(id: Long, side: Boolean = false): Future[Option[QuestDescription]] = {
+    def describeQuest(quest: Quest) = for {
+      itemsNeeded <- findItemsByQuest(quest.id)
+      powersNeeded <- findPowersByQuest(quest.id)
+      itemsHeld <- findItemsHeldByPlayers(quest.id)
+      powersHeld <- findPowersHeldByPlayers(quest.id)
+      Some(master) <- findMasterForQuest(quest.id)
+      itemsForQuest = getItemsNeeded(itemsNeeded, itemsHeld)
+      powersForQuest = getPowersNeeded(powersNeeded, powersHeld)
+    } yield Some(QuestDescription(quest, master, itemsForQuest, powersForQuest)): Option[QuestDescription]
 
-      case None => Future(None)
+    findQuestByPlayer(id, side) flatMap {
+      case Some(quest) => describeQuest(quest)
+      case None => Future successful None
+    }
+  }
+
+  def assignNewQuest(playerId: Long): Future[Quest] = {
+    def getRandomQuest(list: Seq[(Int, Int)]) = {
+      val rand = (math.random * list.size).toInt
+      val (id, _) = list(rand)
+      findQuestById(id) map {
+        case None => throw new IllegalStateException(s"Can't select quest $id")
+        case Some(quest) =>
+          println(s"Giving player $playerId quest ${quest.id}")
+          db.run(playerQuests += PlayerQuest(playerId, quest.id, side = false, completed = false))
+          quest
+      }
+    }
+
+    val questsUncompletedByAnyone = sql"""select quests.id, count(player_quests.player)
+          from quests
+          left join player_quests on (player_quests.quest = quests.id)
+          group by quests.id
+          having count(player_quests.player) = 0
+      """.as[(Int, Int)]
+
+    db.run(questsUncompletedByAnyone) flatMap { list =>
+      if (list.nonEmpty){
+        getRandomQuest(list)
+      }
+      else {
+        val questsUncompletedByPlayer = sql"""select quests.id, count(player_quests.player)
+              from quests
+              left join player_quests on (player_quests.quest = quests.id)
+              where player_quests.player = $playerId
+              group by quests.id
+              having count(player_quests.player) = 0
+          """.as[(Int, Int)]
+
+        db.run(questsUncompletedByPlayer) flatMap { list =>
+          getRandomQuest(list)
+        }
+      }
+    }
+  }
+
+  def assignItems(player: Player, number: Int): Unit = {
+    def giveRandomItem(list: Seq[Item]) = {
+      val rand = (math.random * list.size).toInt
+      val item = list(rand)
+      println(s"Giving player ${player.id} item ${item.id}")
+      db.run(items.filter(_.id === item.id).map(_.owner).update(Some(player.id)))
+    }
+
+    for (i <- 1 to number){
+      val itemsUnownedByAnyone = items.filter(_.owner.isEmpty).result
+
+      db.run(itemsUnownedByAnyone) map { list =>
+        if (list.nonEmpty){
+          giveRandomItem(list)
+        }
+      }
+    }
+  }
+
+  def insertPlayerPower(player: Long, power: Long) = db.run(playerPowers += PlayerPower(player, power)) recover {
+    case t: Throwable => t.printStackTrace()
+  }
+
+  def insertPlayerQuest(player: Long, quest: Long, side: Boolean) = db.run(playerQuests += PlayerQuest(player, quest, side, completed = false)) recover {
+    case t: Throwable => t.printStackTrace()
+  }
+
+  def assignPowers(player: Player, number: Int): Unit = {
+    def giveRandomPower(list: Seq[(Int, Int)]) = {
+      val rand = (math.random * list.size).toInt
+      val (id, _) = list(rand)
+      println(s"Giving player ${player.id} power $id")
+      insertPlayerPower(player.id, id)
+    }
+
+    val powersUnownedByAnyone = sql"""select powers.id, count(player_powers.player)
+          from powers
+          left join player_powers on (player_powers.power = powers.id)
+          group by powers.id
+          having count(player_powers.player) = 0
+      """.as[(Int, Int)]
+
+    val powersUnownedByPlayer = sql"""select powers.id, count(player_powers.player)
+        from powers
+        left join player_powers on (player_powers.power = powers.id)
+        where player_powers.player = ${player.id}
+        group by powers.id
+        having count(player_powers.player) = 0
+      """.as[(Int, Int)]
+
+    for (i <- 1 to number){
+      db.run(powersUnownedByAnyone) map { list =>
+        if (list.nonEmpty){
+          giveRandomPower(list)
+        }
+        else {
+          db.run(powersUnownedByPlayer) map { list =>
+            giveRandomPower(list)
+          }
+        }
+      }
     }
   }
 
@@ -201,9 +467,10 @@ object PartyDAO {
           powersNeeded <- findPowersByQuest(quest.id)
           itemsHeld <- findItemsHeldByPlayers(quest.id)
           powersHeld <- findPowersHeldByPlayers(quest.id)
+          Some(master) <- findMasterForQuest(quest.id)
           itemsForQuest = getItemsNeeded(itemsNeeded, itemsHeld)
           powersForQuest = getPowersNeeded(powersNeeded, powersHeld)
-        } yield QuestDescription(quest, itemsForQuest, powersForQuest)
+        } yield QuestDescription(quest, master, itemsForQuest, powersForQuest)
       }
     }
   }
@@ -235,14 +502,20 @@ object PartyDAO {
   
   private def questById(id: Long) = quests.sortBy(_.name).filter(_.id === id)
   private def playerById(id: Long) = players.filter(_.id === id)
-  private def gameById(id: Long) = games.filter(_.id === id)
+  private def gameById(id: Long, started: Boolean = false) = if (started)
+    games.filter(g => g.id === id && g.started === true)
+  else
+    games.filter(_.id === id)
+
   private def itemById(id: Long) = items.sortBy(_.name).filter(_.id === id)
   private def powerById(id: Long) = powers.sortBy(_.name).filter(_.id === id)
 
+  private def tradeById(id: Long) = trades.filter(_.id === id)
+
   private def questInsert = quests returning quests.map(_.id) into ((quest, id) => quest.copy(id = id))
 
-  private def questsByPlayer(playerId: Long, side: Boolean) = for {
-    playerQuest <- playerQuests if playerQuest.player === playerId && playerQuest.side === side
+  private def currentQuestsByPlayer(playerId: Long, side: Boolean) = for {
+    playerQuest <- playerQuests if playerQuest.player === playerId && playerQuest.side === side && playerQuest.completed === false
     quest <- quests if quest.id === playerQuest.quest
   } yield quest
 
@@ -251,6 +524,9 @@ object PartyDAO {
   } yield quest
 
   private def itemsByPlayer(playerId: Long) = items.filter(_.owner === playerId)
+
+  private def tradesByOfferer(playerId: Long) = trades.filter(t => t.offerer === playerId && t.stage < TradeStage.Accepted)
+  private def tradesByOfferee(playerId: Long) = trades.filter(t => t.offeree === playerId && t.stage < TradeStage.Accepted)
 
   private def itemsByQuest(questId: Long) = for {
     questItem <- questItems if questItem.quest === questId
@@ -275,10 +551,23 @@ object PartyDAO {
     power <- powers if power.id === questPower.power
   } yield power
 
-  private def playersByQuest(questId: Long) = for {
-    playerQuest <- playerQuests if playerQuest.quest === questId
-    player <- players if player.id === playerQuest.player
-  } yield player
+  private def playersByQuest(questId: Long, main: Option[Boolean] = None) = main match {
+    case Some(true) =>
+      for {
+        playerQuest <- playerQuests if playerQuest.quest === questId && playerQuest.side === false
+        player <- players if player.id === playerQuest.player
+      } yield player
+    case Some(false) =>
+      for {
+        playerQuest <- playerQuests if playerQuest.quest === questId && playerQuest.side === true
+        player <- players if player.id === playerQuest.player
+      } yield player
+    case None =>
+      for {
+        playerQuest <- playerQuests if playerQuest.quest === questId
+        player <- players if player.id === playerQuest.player
+      } yield player
+  }
 
   private def itemsHeldByPlayers(questId: Long) = for {
     playerQuest <- playerQuests if playerQuest.quest === questId

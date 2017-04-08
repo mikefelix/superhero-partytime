@@ -3,6 +3,7 @@
 create table games (
   id serial primary key,
   name varchar(128) not null,
+  started boolean not null default false,
   created timestamptz not null default now(),
   updated timestamptz not null default now()
 );
@@ -27,7 +28,9 @@ create table players (
   name varchar(128) not null,
   alias varchar(128) not null,
   created timestamptz not null default now(),
-  updated timestamptz not null default now()
+  updated timestamptz not null default now(),
+  score integer not null default 0,
+  unique (game, alias)
 );
 
 insert into players(game, alias, name) values (1, 'Mr. Buttkix', 'Brandon');
@@ -63,7 +66,8 @@ insert into powers(game, name, description) values (1, 'Speak with dirt', 'The a
 create table player_quests (
   quest integer not null references quests("id"),
   player integer not null references players("id"),
-  side boolean not null,
+  side boolean not null default false,
+  completed boolean not null default false,
   primary key (quest, player, side)
 );
 
@@ -98,4 +102,23 @@ create table quest_powers (
 
 insert into quest_powers (quest, power) values (1, 1);
 
+create table trades (
+  id serial primary key,
+  game integer not null references games("id"),
+  offerer integer not null references players("id"),
+  offeree integer not null references players("id"),
+  offerer_item integer references items("id"),
+  offeree_item integer references items("id"),
+  offerer_other varchar(300),
+  offeree_other varchar(300),
+  stage integer not null default(1)
+);
 
+create table chats (
+  id        SERIAL PRIMARY KEY,
+  game      INTEGER     NOT NULL REFERENCES games ("id"),
+  poster    INTEGER REFERENCES players ("id"),
+  recipient INTEGER REFERENCES players ("id"),
+  chat      TEXT,
+  created   TIMESTAMPTZ NOT NULL DEFAULT now()
+);

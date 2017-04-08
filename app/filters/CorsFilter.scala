@@ -9,7 +9,7 @@ import scala.concurrent.{ ExecutionContext, Future }
 
 class CorsFilter @Inject() (implicit val mat: Materializer, ec: ExecutionContext) extends Filter {
   def apply(nextFilter: RequestHeader => Future[Result])(request: RequestHeader): Future[Result] = {
-    val headers = request.headers.keys ++ Set("Authorization, Accept, Origin, Content-type, X-Json, X-Prototype-Version, X-Requested-With, X-Tableau-Auth")
+    val headers = request.headers.keys ++ Set("Authorization, Accept, Origin, Content-type, X-Json, X-Prototype-Version, X-Requested-With")
     nextFilter(request).map { result =>
       result.withHeaders(
         "Access-Control-Allow-Origin" -> "*",

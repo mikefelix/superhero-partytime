@@ -5,7 +5,7 @@
 # An example controller showing a sample home page
 POST    /login                                             controllers.ApplicationController.login
 GET     /games/:id                                         controllers.ApplicationController.getGame(id: Long)
-POST    /games                                             controllers.ApplicationController.postGame
+#POST    /games                                             controllers.ApplicationController.postGame
 
 POST    /games/:gameId/items                               controllers.ApplicationController.postItem(gameId: Long)
 GET     /games/:gameId/items                               controllers.ApplicationController.getItems(gameId: Long)
@@ -30,9 +30,20 @@ POST    /games/:gameId/players                             controllers.Applicati
 PUT     /games/:gameId/players/:id                         controllers.ApplicationController.putPlayer(gameId: Long, id: Long)
 DELETE  /games/:gameId/players/:id                         controllers.ApplicationController.deletePlayer(gameId: Long, id: Long)
 
+GET     /games/:gameId/players/:playerId/offeroptions      controllers.ApplicationController.getOfferOptions(gameId: Long, playerId: Long)
+
+GET     /games/:gameId/players/:playerId/trades            controllers.ApplicationController.listTradesForPlayer(gameId: Long, playerId: Long)
+POST    /games/:gameId/players/:playerId/trades            controllers.ApplicationController.postTrade(gameId: Long, playerId: Long)
+PUT     /games/:gameId/players/:playerId/trades/:tradeId   controllers.ApplicationController.putTrade(gameId: Long, playerId: Long, tradeId: Long)
+
+GET     /games/:gameId/players/:playerId/chats             controllers.ApplicationController.getLatestChats(gameId: Long, playerId: Long)
+POST    /games/:gameId/chats                               controllers.ApplicationController.postChat(gameId: Long)
+
 GET     /form/games                                        controllers.FormController.listGames
 GET     /form/games/:gameId                                controllers.FormController.showGameForm(gameId: Long)
 POST    /form/games/:gameId                                controllers.FormController.updateGame(gameId: Long)
+POST    /form/games/:gameId/init                           controllers.FormController.init(gameId: Long)
+POST    /form/games/:gameId/reset                          controllers.FormController.reset(gameId: Long)
 
 GET     /form/games/:gameId/quests                         controllers.FormController.listQuests(gameId: Long)
 GET     /form/games/:gameId/quests/:questId                controllers.FormController.showQuestForm(gameId: Long, questId: Long)

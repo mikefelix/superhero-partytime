@@ -2,7 +2,7 @@
 
 @main(form.value) {
     <h2>Game management</h2>
-    <h3>@flash.get("error").getOrElse("")</h3>
+    <h3>@flash.get("message").getOrElse("")</h3>
 
     @helper.form(routes.FormController.updateGame(id)) {
         @if(form.hasGlobalErrors) {
@@ -14,6 +14,18 @@
         @helper.inputText(form("name"))
 
         <p><button type="submit">Submit</button></p>
+
+
+    }
+
+    @helper.form(routes.FormController.init(id)) {
+        <p><button type="submit">INIT GAME!</button></p>
+        <p>Assign items, powers and quests to current players.</p>
+    }
+
+    @helper.form(routes.FormController.reset(id)) {
+        <p><button type="submit">RESET GAME!</button></p>
+        <p>Warning: this will delete all quest assignments, item assignments and power assignments. Will not delete players, quests, items or powers.</p>
     }
 
 }

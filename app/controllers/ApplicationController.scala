@@ -2,23 +2,36 @@ package controllers
 
 import javax.inject.Inject
 
+import models.PartyDAO._
 import models.{PartyDAO => dao, _}
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import play.api.libs.json.JsValue
+import play.api.libs.json.{JsValue, Json}
 import play.api.libs.json.Json.{toJsFieldJsValueWrapper => js}
 import play.api.mvc._
 import services.Auth
-
+import services.Util.jsSafe
 import scala.concurrent.Future
 
 class ApplicationController @Inject()(auth: Auth) extends Controller {
 
   implicit def futurize[A](a: A): Future[A] = Future successful a
+  implicit def optionize[A](a: A): Option[A] = Some(a)
+
+  private val sillyExtraOffers = List("A drink", "A kiss", "A promise")
+  private val pointsOffers = List(1, 5, 10).map(p => s"+$p" -> s"$p point${if (p != 1) "s" else ""}")
+
+  private def withGame(gameId: Long)(block: Game => Future[Result])(implicit request: Request[_]) = {
+    findStartedGameById(gameId) flatMap {
+      case Some(game) => block(game)
+      case None => Future successful NotFound("Game " + gameId)
+    }
+  }
 
   def login = Action { implicit req =>
     Ok(s"""{"player":1}""")
   }
 
+/*
   def postGame = Action.async { implicit req =>
     req.body.asJson.asGame match {
       case None => BadRequest
@@ -28,6 +41,7 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
         } yield Created(id.toString)
     }
   }
+*/
 
   def getGame(id: Long) = Action.async { implicit req =>
     dao.findGameById(id).map {
@@ -60,6 +74,16 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
     }
   }
 
+  def postChat(gameId: Long) = Action.async { implicit req =>
+    req.body.asJson.asChat match {
+      case None => BadRequest
+      case Some(Chat(_, _, poster, recipient, chat, _)) =>
+        for {
+          id <- dao.addUserChat(gameId, poster.get, recipient, chat)
+        } yield Created(id.toString)
+    }
+  }
+
 /*
   def listQuests(gameId: Long) = Action.async { implicit req =>
     req.player match {
@@ -77,6 +101,30 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
 
   def listPlayers(gameId: Long) = Action.async { implicit req =>
     for (players <- dao.findPlayerDescsByGame(gameId)) yield Ok(players.toJson)
+  }
+
+
+  def getOfferOptions(gameId: Long, playerId: Long) = Action.async { implicit req =>
+    dao.findItemsByPlayer(playerId) flatMap { items =>
+      val offers = items.map(item => item.id.toString -> s"Item: ${item.name}") ++
+        pointsOffers ++
+        sillyExtraOffers.map(o => o -> o)
+      Ok(offers.toJson)
+    }
+  }
+
+  def getLatestChats(gameId: Long, playerId: Long) = Action.async { implicit req =>
+    dao.findLatestChats(gameId, playerId, 100) map { chats =>
+      Ok(chats.toJson)
+    }
+  }
+
+  def listTradesForPlayer(gameId: Long, playerId: Long) = Action.async { implicit req =>
+    for {
+      offersGiven <- dao.findTradesByOfferer(gameId)
+      offersReceived <- dao.findTradesByOfferer(gameId)
+      offers = offersGiven ++ offersReceived
+    } yield Ok(offers.toJson)
   }
 
   def getQuest(gameId: Long, id: Long) = Action.async { implicit req =>
@@ -112,7 +160,7 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
   def getQuestForPlayer(gameId: Long, playerId: Long) = Action.async { implicit req =>
     Some(playerId) match {//req.player match {
       case Some(id) if playerId == id =>
-        dao.findQuestDescByPlayer(playerId) flatMap {
+        dao.findCurrentQuestDescByPlayer(playerId, side = false) flatMap {
           case Some(quest) => Ok(quest.toJson)
           case None => NotFound
         }
@@ -120,17 +168,19 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
     }
   }
 
+  val NoQuest = QuestDescription(0, "None", "", 0, 0, None, None, None, None, None, None)
+
   def getSidequestForPlayer(gameId: Long, playerId: Long) = Action.async { implicit req =>
     Some(playerId) match {//req.player match {
       case Some(id) if playerId == id =>
         val quest = for {
-          questOpt <- dao.findQuestDescByPlayer(playerId, side = true)
+          questOpt <- dao.findCurrentQuestDescByPlayer(playerId, side = true)
           quest <- questOpt
         } yield quest
 
         quest map {
           case Some(q) => Ok(q.toJson)
-          case None => NotFound
+          case None => Ok(NoQuest.toJson)
         }
       case _ => Unauthorized
     }
@@ -190,7 +240,136 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
   def postPlayer(gameId: Long) = Action.async { implicit req =>
     req.body.asJson.asPlayer match {
       case None => BadRequest
-      case Some(player) => for (id <- dao.insertPlayer(player)) yield Created(id.toString)
+      case Some(postedPlayer) =>
+
+        dao.insertPlayer(postedPlayer) flatMap { player =>
+          dao.assignItems(player, 2)
+          dao.assignPowers(player, 2)
+          dao.assignNewQuest(player.id)
+
+          dao.findPlayerDescById(player.id) map {
+            case Some(dbPlayer) => Created(dbPlayer.toJson)
+            case _ => BadRequest
+          }
+        }
+    }
+  }
+
+  sealed trait Transfer {
+    val descriptionToGiver: String
+    val descriptionToReceiver: String
+  }
+
+  class ItemTransfer(giver: Player, receiver: Player, item: Item) extends Transfer {
+    override val descriptionToGiver = s"${receiver.alias} received your ${item.name}"
+    override val descriptionToReceiver = s"you received their ${item.name}"
+  }
+
+  class OtherTransfer(giver: Player, receiver: Player, other: String) extends Transfer {
+    override val descriptionToGiver = s"You will give $other to ${receiver.alias}"
+    override val descriptionToReceiver = s"you will receive $other in return"
+  }
+
+  private def transferItem(itemId: Long, giverId: Long, receiverId: Long): Future[Transfer] = {
+    dao.findPlayerById(giverId) flatMap {
+      case None =>
+        throw new IllegalStateException(s"Invalid player for transfer: $giverId")
+      case Some(giver) =>
+        dao.findPlayerById(receiverId) flatMap {
+          case None =>
+            throw new IllegalStateException(s"Invalid player for transfer: $receiverId")
+          case Some(receiver) =>
+            dao.findItemById(itemId) map {
+              case None =>
+                throw new IllegalStateException(s"Invalid item for transfer: $itemId")
+              case Some(item) =>
+                dao.updateItem(item.copy(owner = Some(receiverId)))
+                new ItemTransfer(giver, receiver, item)
+            }
+        }
+    }
+  }
+
+  private def tradeMessage(trade: Trade, playerId: Long, transferToOfferee: Transfer, transferToOfferer: Transfer): String = {
+    val playerIsOfferer = trade.offerer == playerId
+
+    if (playerIsOfferer){
+      s"Trade negotiated. ${transferToOfferee.descriptionToGiver} and ${transferToOfferer.descriptionToReceiver}."
+    }
+    else {
+      s"Trade negotiated. ${transferToOfferer.descriptionToGiver} and ${transferToOfferee.descriptionToReceiver}."
+    }
+  }
+
+  def postTrade(gameId: Long, playerId: Long) = Action.async { implicit req =>
+    req.body.asText.map(Json.parse).asTrade match {
+      case None => BadRequest
+      case Some(trade) => for (id <- dao.insertTrade(trade)) yield Created(id.toString)
+    }
+  }
+
+  def putTrade(gameId: Long, playerId: Long, tradeId: Long) = Action.async { implicit req =>
+    req.body.asJson.asTrade match {
+      case None => BadRequest
+      case Some(trade) =>
+        if (trade.rejected) {
+          Ok("Trade cancelled")
+        }
+        else if (!trade.accepted) {
+          for (id <- dao.updateTrade(trade)) yield
+            if (trade.counteroffered)
+              Ok(s"Counteroffer sent")
+            else if (trade.offered)
+              Ok(s"Offer sent")
+            else
+              InternalServerError
+        }
+        else {
+          // trade.accepted
+          dao.findPlayerById(trade.offerer) flatMap {
+            case None => throw new IllegalArgumentException(s"No such player ${trade.offerer}")
+            case Some(offerer) =>
+              dao.findPlayerById(trade.offeree) flatMap {
+                case None => throw new IllegalArgumentException(s"No such player ${trade.offeree}")
+                case Some(offeree) => processTrade(offerer, offeree, playerId, trade)
+              }
+          }
+        }
+    }
+  }
+
+  private def processTrade(offerer: Player, offeree: Player, playerId: Long, trade: Trade): Future[Result] = {
+    (trade.offererItem, trade.offererOther, trade.offereeItem, trade.offereeOther) match {
+      case (Some(offererItem), _, Some(offereeItem), _) =>
+        for {
+          transferToOfferee <- transferItem(offererItem, trade.offerer, trade.offeree)
+          transferToOfferer <- transferItem(offereeItem, trade.offeree, trade.offerer)
+          traded <- dao.updateTrade(trade)
+        } yield Ok(tradeMessage(trade, playerId, transferToOfferee, transferToOfferer))
+
+      case (None, Some(offererOther), Some(offereeItem), _) =>
+        for {
+          transferToOfferer <- transferItem(offereeItem, trade.offeree, trade.offerer)
+          transferToOfferee = new OtherTransfer(offerer, offeree, offererOther)
+          traded <- dao.updateTrade(trade)
+        } yield Ok(tradeMessage(trade, playerId, transferToOfferee, transferToOfferer))
+
+      case (Some(offererItem), _, None, Some(offereeOther)) =>
+        for {
+          transferToOfferee <- transferItem(offererItem, trade.offerer, trade.offeree)
+          transferToOfferer = new OtherTransfer(offeree, offerer, offereeOther)
+          traded <- dao.updateTrade(trade)
+        } yield Ok(tradeMessage(trade, playerId, transferToOfferee, transferToOfferer))
+
+      case (None, Some(offererOther), None, Some(offereeOther)) =>
+        val transferToOfferee = new OtherTransfer(offerer, offeree, offererOther)
+        val transferToOfferer = new OtherTransfer(offeree, offerer, offereeOther)
+
+        for {
+          traded <- dao.updateTrade(trade)
+        } yield Ok(tradeMessage(trade, playerId, transferToOfferee, transferToOfferer))
+
+      case _ => throw new IllegalStateException(s"Need one offer from each player. Got ${(trade.offererItem, trade.offererOther, trade.offereeItem, trade.offereeOther)}")
     }
   }
 
@@ -229,14 +408,14 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
 
   implicit def questToString(quest: Quest): String =
     s"""{"id":${quest.id},
-        | "name":"${quest.name.replace("\"", "\\\"")}",
-        | "description":"${quest.description.replace("\"", "\\\"")}"
+        | "name":"${jsSafe(quest.name)}",
+        | "description":"${jsSafe(quest.description)}"
         |} """.stripMargin
 
   implicit def questDescToString(quest: QuestDescription): String = {
     val items = quest.items.map { item =>
       s"""{"name":"${item.name}",
-         |"description":"${item.description}",
+         |"description":"${jsSafe(item.description)}",
          |"id":${item.id},
          |"found":${item.found}
          |}""".stripMargin
@@ -244,15 +423,16 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
 
     val powers = quest.powers.map { power =>
       s"""{"name":"${power.name}",
-         |"description":"${power.description}",
+         |"description":"${jsSafe(power.description)}",
          |"id":${power.id},
          |"found":${power.found}
          |}""".stripMargin
     }
     
     s"""{"id":${quest.id},
-        |"name":"${quest.name.replace("\"", "\\\"")}",
-        |"description":"${quest.description.replace("\"", "\\\"")}",
+        |"name":"${jsSafe(quest.name)}",
+        |"master":${quest.master},
+        |"description":"${jsSafe(quest.description)}",
         |"items":[${items.mkString(",")}],
         |"powers":[${powers.mkString(",")}]
         |}""".stripMargin
@@ -262,30 +442,50 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
   implicit class QuestDescriptionToJson(quest: QuestDescription) {
     def toJson: String = questDescToString(quest)
   }
- 
+
+  implicit def chatDetailToString(chat: ChatDetail): String = {
+    s"""{
+       |"id":${chat.id},
+       |"poster":${chat.poster.getOrElse(0)},
+       |"posterName":"${chat.posterName}",
+       |"chat":"${jsSafe(chat.chat)}"
+       |}
+     """.stripMargin
+  }
+
   implicit def playerDescToString(player: PlayerDescription): String = {
     val items = player.items.map { item =>
       s"""{"name":"${item.name}",
-         | "description":"${item.description}",
+         | "description":"${jsSafe(item.description)}",
          | "id":${item.id}
          |}""".stripMargin
     }
 
     val powers = player.powers.map { power =>
       s"""{"name":"${power.name}",
-         | "description":"${power.description}",
+         | "description":"${jsSafe(power.description)}",
          | "id":${power.id}
          |}""".stripMargin
     }
-    
+
+    val mainQuest = player.mainQuest map questToString getOrElse "null"
+    val sideQuest = player.sideQuest map questToString getOrElse "null"
+
     s"""{"id":${player.id},
-        | "name":"${player.name.replace("\"", "\\\"")}",
-        | "alias":"${player.alias.replace("\"", "\\\"")}",
+        | "name":"${jsSafe(player.name)}",
+        | "alias":"${jsSafe(player.alias)}",
+        | "mainquest": $mainQuest,
+        | "sidequest": $sideQuest,
         | "items":[${items.mkString(",")}],
         | "powers":[${powers.mkString(",")}]
         |}""".stripMargin
   }
 
+
+
+  implicit class ChatDetailToJson(chat: ChatDetail) {
+    def toJson: String = chatDetailToString(chat)
+  }
 
   implicit class PlayerDescriptionToJson(player: PlayerDescription) {
     def toJson: String = playerDescToString(player)
@@ -297,8 +497,8 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
       s"""{
          | "id":${quest.id},
          | "game":${quest.game},
-         | "name":"${quest.name.replace("\"", "\\\"")}",
-         | "description":"${quest.description.replace("\"", "\\\"")}",
+         | "name":"${jsSafe(quest.name)}",
+         | "description":"${jsSafe(quest.description)}",
          | "items":${items.toJson}
          |}
        """.stripMargin
@@ -311,14 +511,25 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
       s"""{
          | "id":${quest.id},
          | "game":${quest.game},
-         | "name":"${quest.name.replace("\"", "\\\"")}",
-         | "description":"${quest.description.replace("\"", "\\\"")}",
+         | "name":"${jsSafe(quest.name)}",
+         | "description":"${jsSafe(quest.description)}",
          | "players":${players.toJson}
          |}
        """.stripMargin
     }
   }
 
+  implicit class ChatsToJson(chats: Seq[Chat]) {
+    def toJson: String = "[" + chats.map(_.toJson()).mkString(",") + "]"
+  }
+
+  implicit class ChatDetailsToJson(chats: Seq[ChatDetail]) {
+    def toJson: String = "[" + chats.map(_.toJson).mkString(",") + "]"
+  }
+
+  implicit class TradesToJson(trades: Seq[Trade]) {
+    def toJson: String = "[" + trades.map(_.toJson()).mkString(",") + "]"
+  }
 
   implicit class ItemsToJson(items: Seq[Item]) {
     def toJson: String = "[" + items.map(_.toJson()).mkString(",") + "]"
@@ -336,14 +547,21 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
     def toJson: String = "[" + players.map(_.toJson).mkString(",") + "]"
   }
 
-  implicit class ModelFromBody(body: Option[JsValue]) {
-    def asPlayer = body.map(new Player(_))
-    def asItem = body.map(new Item(_))
-    def asPower = body.map(new Power(_))
-    def asQuest = body.map(new Quest(_))
-    def asGame = body.map(new Game(_))
+  implicit class OfferSeqToJson(offers: Seq[(String, String)]) {
+    def toJson: String = "[" + offers.map(o => s"""{"key":"${jsSafe(o._1)}","value":"${jsSafe(o._2)}"}""").mkString(",") + "]"
   }
 
+  implicit class ModelFromBody(body: Option[JsValue]) {
+    private def get[M <: Model](body: Option[JsValue], func: (JsValue => M)) = body map func
+
+    def asPlayer = get(body, new Player(_))
+    def asItem = get(body, new Item(_))
+    def asPower = get(body, new Power(_))
+    def asTrade = get(body, new Trade(_))
+    def asQuest = get(body, new Quest(_))
+    def asGame = get(body, new Game(_))
+    def asChat = get(body, new Chat(_))
+  }
 }
 
 

@@ -4,11 +4,11 @@ import javax.inject._
 
 import models.PartyDAO._
 import models.{PartyDAO => dao, _}
+import play.api.Configuration
 import play.api.data.Forms._
 import play.api.data._
 import play.api.i18n.{I18nSupport, MessagesApi}
 import play.api.mvc._
-import play.api.{Configuration, Logger}
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
@@ -28,7 +28,8 @@ class FormController @Inject()(implicit configuration: Configuration, val messag
   val gameForm = Form(
     mapping(
       "id" -> ignored(0L),
-      "name" -> text
+      "name" -> text,
+      "started" -> boolean
     )(Game.apply)(Game.unapply)
   )
 
@@ -76,6 +77,7 @@ class FormController @Inject()(implicit configuration: Configuration, val messag
       "name" -> text,
       "description" -> text,
       "game" -> ignored(0L),
+      "master" -> ignored(0L),
       "item1" -> optional(longNumber),
       "item2" -> optional(longNumber),
       "item3" -> optional(longNumber),
@@ -84,6 +86,24 @@ class FormController @Inject()(implicit configuration: Configuration, val messag
       "power3" -> optional(longNumber)
     )(QuestDescription.applyIds)(QuestDescription.unapplyIds)
   )
+
+  def init(gameId: Long) = Action.async { implicit req =>
+    withGame(gameId) { game =>
+      if (game.started)
+        Redirect(routes.FormController.showGameForm(gameId)).flashing("message" -> "Game was already started; could not start.")
+      else {
+        initGame(game)
+        Redirect(routes.FormController.showGameForm(gameId)).flashing("message" -> "Game was started.")
+      }
+    }
+  }
+
+  def reset(gameId: Long) = Action.async { implicit req =>
+    withGame(gameId) { game =>
+      resetGame(game)
+      Redirect(routes.FormController.showGameForm(gameId)).flashing("message" -> "Game was reset.")
+    }
+  }
 
   def login = Action {
     Ok(views.html.login(loginForm))
@@ -121,7 +141,7 @@ class FormController @Inject()(implicit configuration: Configuration, val messag
   def showQuestForm(gameId: Long, questId: Long) = Action.async { implicit request =>
     withGame(gameId) { game =>
       val quest = if (questId < 1)
-        Future(Some(new QuestDescription(questId, "", "", game.id)))
+        Future(Some(new QuestDescription(questId, "", "", game.id, 0)))
       else
         findQuestDescById(questId)
 
@@ -185,7 +205,6 @@ class FormController @Inject()(implicit configuration: Configuration, val messag
     withGame(gameId) { game =>
       questForm.bindFromRequest.fold(
         formWithErrors => {
-          println(s"$formWithErrors")
           findItemsByGame(gameId) flatMap { items =>
             findPowersByGame(gameId) flatMap { powers =>
               Future successful BadRequest(views.html.quest(questId, game,

@@ -1,7 +1,10 @@
 package models
 
+import java.sql.Date
+
 import play.api.libs.json.Json.{JsValueWrapper, toJsFieldJsValueWrapper => js}
 import play.api.libs.json.{JsValue, Json}
+import services.Util
 import slick.driver.PostgresDriver.api._
 import slick.lifted.Tag
 
@@ -23,16 +26,52 @@ trait Requirement {
   val description: String
 }
 
-case class Game(id: Long, name: String) extends Model {
-  def this(id: Long) = this(id, "")
+case class Game(id: Long, name: String, started: Boolean) extends Model {
+  def this(id: Long) = this(id, "", false)
   def this(body: JsValue) = this(
     (body \ "id").validate[Long].getOrElse(-1L),
-    (body \ "name").validate[String].get
+    (body \ "name").validate[String].get,
+    (body \ "started").validate[Boolean].get
   )
 
   def toJson(extras: (String, JsValueWrapper)*) = Json.obj(
     ("id" -> js(id)) +:
     ("name" -> js(name)) +:
+    ("started" -> js(started)) +:
+    extras: _*
+  )
+}
+
+case class ChatDetail(id: Long, game: Long, poster: Option[Long], posterName: String, chat: String)
+
+object ChatDetail {
+  def apply(chat: Chat, posterPlayer: Player) = {
+    val name = if (chat.poster.isEmpty || chat.poster.get == 0L)
+      "System"
+    else
+      s"${posterPlayer.alias} (${posterPlayer.name})"
+
+    new ChatDetail(chat.id, chat.game, Some(posterPlayer.id), name, chat.chat)
+  }
+}
+
+case class Chat(id: Long, game: Long, poster: Option[Long], recipient: Option[Long], chat: String, created: Date) extends Model {
+  def this(body: JsValue) = this(
+    (body \ "id").validate[Long].getOrElse(-1L),
+    (body \ "game").validate[Long].get,
+    (body \ "poster").validateOpt[Long].get,
+    (body \ "recipient").validateOpt[Long].get,
+    Util.jsSafe((body \ "chat").validate[String].get),
+    (body \ "created").validate[Date].get
+  )
+
+  def toJson(extras: (String, JsValueWrapper)*) = Json.obj(
+    ("id" -> js(id)) +:
+    ("game" -> js(game)) +:
+    ("poster" -> js(poster)) +:
+    ("recipient" -> js(recipient)) +:
+    ("chat" -> js(chat)) +:
+    ("created" -> js(created)) +:
     extras: _*
   )
 }
@@ -73,7 +112,7 @@ case class Item(id: Long, game: Long, name: String, description: String, owner: 
     ("id" -> js(id)) +:
     ("game" -> js(game)) +:
     ("name" -> js(name)) +:
-    ("description" -> js(description)) +:
+    ("description" -> js(Util.jsSafe(description))) +:
     ("owner" -> js(owner)) +:
     extras: _*
   )
@@ -97,10 +136,55 @@ case class Power(id: Long, game: Long, name: String, description: String) extend
     ("id" -> js(id)) +:
     ("game" -> js(game)) +:
     ("name" -> js(name)) +:
-    ("description" -> js(description)) +:
+    ("description" -> js(description.replaceAll("\n", " "))) +:
     extras: _*
   )
 }
+
+object TradeStage {
+  val Rejected = 0
+  val Offered = 1
+  val Counteroffered = 2
+  val Accepted = 3
+}
+
+case class Trade(id: Long, game: Long, offerer: Long, offeree: Long,
+                 offererItem: Option[Long], offereeItem: Option[Long],
+                 offererOther: Option[String], offereeOther: Option[String],
+                 stage: Int) extends Model {
+  def this(body: JsValue) = this(
+    (body \ "id").validate[Long].getOrElse(-1L),
+    (body \ "game").validate[Long].get,
+    (body \ "offerer").validate[Long].get,
+    (body \ "offeree").validate[Long].get,
+    (body \ "offererItem").validateOpt[Long].get,
+    (body \ "offereeItem").validateOpt[Long].get,
+    (body \ "offererOther").validateOpt[String].get,
+    (body \ "offereeOther").validateOpt[String].get,
+    (body \ "stage").validate[Int].get
+  )
+
+  def toJson(extras: (String, JsValueWrapper)*) = Json.obj(
+    ("id" -> js(id)) +:
+    ("game" -> js(game)) +:
+    ("offerer" -> js(offerer)) +:
+    ("offeree" -> js(offerer)) +:
+    ("offererItem" -> js(offererItem)) +:
+    ("offereeItem" -> js(offereeItem)) +:
+    ("offererOther" -> js(offererOther)) +:
+    ("offereeOther" -> js(offereeOther)) +:
+    ("offered" -> js(offered)) +:
+    ("counteroffered" -> js(counteroffered)) +:
+    ("accepted" -> js(accepted)) +:
+    extras: _*
+  )
+
+  def accepted = stage >= 3
+  def counteroffered = stage >= 2
+  def offered = stage >= 1
+  def rejected = stage == 0
+}
+
 
 case class Quest(id: Long, name: String, description: String, game: Long) extends Model {
   def this(id: Long) = this(id, "", "", 0)
@@ -120,7 +204,7 @@ case class Quest(id: Long, name: String, description: String, game: Long) extend
   )
 }
 
-case class PlayerQuest(player: Long, quest: Long)
+case class PlayerQuest(player: Long, quest: Long, side: Boolean, completed: Boolean)
 case class PlayerPower(player: Long, power: Long)
 case class GameItem(game: Long, item: Long)
 case class QuestItem(quest: Long, item: Long)
@@ -163,12 +247,28 @@ class Powers(tag: Tag) extends Table[Power](tag, "powers") {
   def * = (id, game, name, description) <> (Power.tupled, Power.unapply)
 }
 
+class Trades(tag: Tag) extends Table[Trade](tag, "trades") {
+
+  def id = column[Long]("id", O.AutoInc, O.PrimaryKey)
+  def game = column[Long]("game")
+  def offerer = column[Long]("offerer")
+  def offeree = column[Long]("offeree")
+  def offererItem = column[Option[Long]]("offerer_item")
+  def offereeItem = column[Option[Long]]("offeree_item")
+  def offererOther = column[Option[String]]("offerer_other")
+  def offereeOther = column[Option[String]]("offeree_other")
+  def stage = column[Int]("stage")
+
+  def * = (id, game, offerer, offeree, offererItem, offereeItem, offererOther, offereeOther, stage) <> (Trade.tupled, Trade.unapply)
+}
+
 class Games(tag: Tag) extends Table[Game](tag, "games") {
 
   def id = column[Long]("id", O.AutoInc, O.PrimaryKey)
   def name = column[String]("name")
+  def started = column[Boolean]("started")
 
-  def * = (id, name) <> (Game.tupled, Game.unapply)
+  def * = (id, name, started) <> (Game.tupled, Game.unapply)
 //    def ? = (id.?, gameId.?, name.?).shaped.<>({ r => r._1.map(_ => Player.tupled((r._1.get, r._2.get, r._3.get))) }, (_: Any) => throw new Exception("Inserting into ? projection not supported."))
 }
 
@@ -181,6 +281,18 @@ class Players(tag: Tag) extends Table[Player](tag, "players") {
 
   def * = (id, game, name, alias) <> (Player.tupled, Player.unapply)
 //    def ? = (id.?, gameId.?, name.?).shaped.<>({ r => r._1.map(_ => Player.tupled((r._1.get, r._2.get, r._3.get))) }, (_: Any) => throw new Exception("Inserting into ? projection not supported."))
+}
+
+class Chats(tag: Tag) extends Table[Chat](tag, "chats") {
+
+  def id = column[Long]("id", O.AutoInc, O.PrimaryKey)
+  def game = column[Long]("game")
+  def poster = column[Option[Long]]("poster")
+  def recipient = column[Option[Long]]("recipient")
+  def chat = column[String]("chat")
+  def created = column[Date]("created")
+
+  def * = (id, game, poster, recipient, chat, created) <> (Chat.tupled, Chat.unapply)
 }
 
 class Quests(tag: Tag) extends Table[Quest](tag, "quests") {
@@ -199,8 +311,9 @@ class PlayerQuests(tag: Tag) extends Table[PlayerQuest](tag, "player_quests"){
   def quest = column[Long]("quest")
   def player = column[Long]("player")
   def side = column[Boolean]("side")
+  def completed = column[Boolean]("completed")
 
-  def * = (player, quest) <> (PlayerQuest.tupled, PlayerQuest.unapply)
+  def * = (player, quest, side, completed) <> (PlayerQuest.tupled, PlayerQuest.unapply)
 }
 
 class PlayerPowers(tag: Tag) extends Table[PlayerPower](tag, "player_powers"){
@@ -271,35 +384,35 @@ object PlayerDescription {
   }
 }
 
-case class QuestDescription(id: Long, name: String, description: String, game: Long,
+case class QuestDescription(id: Long, name: String, description: String, game: Long, master: Long,
                             item1: Option[ItemNeeded], item2: Option[ItemNeeded], item3: Option[ItemNeeded],
                             power1: Option[PowerNeeded], power2: Option[PowerNeeded], power3: Option[PowerNeeded]){
-  def this(id: Long, name: String, description: String, game: Long) = this(id, name, description, game, None, None, None, None, None, None)
+  def this(id: Long, name: String, description: String, game: Long, master: Long) = this(id, name, description, game, master, None, None, None, None, None, None)
   def items = Seq(item1, item2, item3).filter(_.nonEmpty).map(_.get)
   def powers = Seq(power1, power2, power3).filter(_.nonEmpty).map(_.get)
   def quest = Quest(id, name, description, game)
 }
 
 object QuestDescription {
-  def applyIds(id: Long, name: String, description: String, game: Long,
+  def applyIds(id: Long, name: String, description: String, game: Long, master: Long,
                               item1: Option[Long], item2: Option[Long], item3: Option[Long],
                               power1: Option[Long], power2: Option[Long], power3: Option[Long]) = {
-    new QuestDescription(id, name, description, game,
+    new QuestDescription(id, name, description, game, master,
       item1.map(new ItemNeeded(_)), item2.map(new ItemNeeded(_)), item3.map(new ItemNeeded(_)),
       power1.map(new PowerNeeded(_)), power2.map(new PowerNeeded(_)), power3.map(new PowerNeeded(_)))
   }
 
-  def unapplyIds(qd: QuestDescription): Option[(Long, String, String, Long, Option[Long], Option[Long], Option[Long], Option[Long], Option[Long], Option[Long])] = {
-    Some(qd.id, qd.name, qd.description, qd.game,
+  def unapplyIds(qd: QuestDescription): Option[(Long, String, String, Long, Long, Option[Long], Option[Long], Option[Long], Option[Long], Option[Long], Option[Long])] = {
+    Some(qd.id, qd.name, qd.description, qd.game, qd.master,
       qd.item1.map(_.id), qd.item2.map(_.id), qd.item3.map(_.id),
       qd.power1.map(_.id), qd.power2.map(_.id), qd.power3.map(_.id))
   }
 
-  def apply(quest: Quest, items: Seq[ItemNeeded], powers: Seq[PowerNeeded]) = {
+  def apply(quest: Quest, master: Player, items: Seq[ItemNeeded], powers: Seq[PowerNeeded]) = {
     def maybeItem(i: Int) = if (items.size > i) Some(items(i)) else None
     def maybePower(i: Int) = if (powers.size > i) Some(powers(i)) else None
 
-    new QuestDescription(quest.id, quest.name, quest.description, quest.game,
+    new QuestDescription(quest.id, quest.name, quest.description, quest.game, master.id,
       maybeItem(0), maybeItem(1), maybeItem(2),
       maybePower(0), maybePower(1), maybePower(2))
   }
