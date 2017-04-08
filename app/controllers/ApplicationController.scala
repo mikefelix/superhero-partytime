@@ -33,7 +33,7 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
 
 /*
   def postGame = Action.async { implicit req =>
-    req.body.asJson.asGame match {
+    req.body.asText.map(Json.parse).asGame match {
       case None => BadRequest
       case Some(game) =>
         for {
@@ -55,7 +55,7 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
   }
 
   def putQuest(gameId: Long, id: Long) = Action.async { implicit req =>
-    req.body.asJson match {
+    req.body.asText.map(Json.parse) match {
       case None => BadRequest
       case Some(json) =>
         for {
@@ -65,7 +65,7 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
   }
 
   def postQuest(gameId: Long) = Action.async { implicit req =>
-    req.body.asJson.asQuest match {
+    req.body.asText.map(Json.parse).asQuest match {
       case None => BadRequest
       case Some(quest) =>
         for {
@@ -74,8 +74,8 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
     }
   }
 
-  def postChat(gameId: Long) = Action.async { implicit req =>
-    req.body.asJson.asChat match {
+  def postChat(gameId: Long, playerId: Long) = Action.async { implicit req =>
+    req.body.asText.map(Json.parse).asChat match {
       case None => BadRequest
       case Some(Chat(_, _, poster, recipient, chat, _)) =>
         for {
@@ -238,18 +238,21 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
   }
 
   def postPlayer(gameId: Long) = Action.async { implicit req =>
-    req.body.asJson.asPlayer match {
+    req.body.asText.map(Json.parse).asPlayer match {
       case None => BadRequest
       case Some(postedPlayer) =>
+        dao.findGameById(gameId) flatMap { case Some(game) =>
+          dao.insertPlayer(postedPlayer) flatMap { player =>
+            if (game.started){
+              dao.assignItems(player, 2)
+              dao.assignPowers(player, 2)
+              dao.assignNewQuest(player.id)
+            }
 
-        dao.insertPlayer(postedPlayer) flatMap { player =>
-          dao.assignItems(player, 2)
-          dao.assignPowers(player, 2)
-          dao.assignNewQuest(player.id)
-
-          dao.findPlayerDescById(player.id) map {
-            case Some(dbPlayer) => Created(dbPlayer.toJson)
-            case _ => BadRequest
+            dao.findPlayerDescById(player.id) map {
+              case Some(dbPlayer) => Created(dbPlayer.toJson)
+              case _ => BadRequest
+            }
           }
         }
     }
@@ -309,7 +312,7 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
   }
 
   def putTrade(gameId: Long, playerId: Long, tradeId: Long) = Action.async { implicit req =>
-    req.body.asJson.asTrade match {
+    req.body.asText.map(Json.parse).asTrade match {
       case None => BadRequest
       case Some(trade) =>
         if (trade.rejected) {
@@ -374,21 +377,21 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
   }
 
   def postItem(gameId: Long) = Action.async { implicit req =>
-    req.body.asJson.asItem match {
+    req.body.asText.map(Json.parse).asItem match {
       case None => BadRequest
       case Some(item) => for (id <- dao.insertItem(item)) yield Created(id.toString)
     }
   }
 
   def postPower(gameId: Long) = Action.async { implicit req =>
-    req.body.asJson.asPower match {
+    req.body.asText.map(Json.parse).asPower match {
       case None => BadRequest
       case Some(power) => for (id <- dao.insertPower(power)) yield Created(id.toString)
     }
   }
 
   def putPlayer(gameId: Long, id: Long) = Action.async { implicit req =>
-    req.body.asJson.asPlayer match {
+    req.body.asText.map(Json.parse).asPlayer match {
       case None => BadRequest
       case Some(player) => for (id <- dao.updatePlayer(player)) yield Created(id.toString)
     }
@@ -552,7 +555,11 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
   }
 
   implicit class ModelFromBody(body: Option[JsValue]) {
-    private def get[M <: Model](body: Option[JsValue], func: (JsValue => M)) = body map func
+    private def get[M <: Model](body: Option[JsValue], func: (JsValue => M)) = {
+      println(s"Try this body: $body")
+
+      body map func
+    }
 
     def asPlayer = get(body, new Player(_))
     def asItem = get(body, new Item(_))

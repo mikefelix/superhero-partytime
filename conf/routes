@@ -37,7 +37,7 @@ POST    /games/:gameId/players/:playerId/trades            controllers.Applicati
 PUT     /games/:gameId/players/:playerId/trades/:tradeId   controllers.ApplicationController.putTrade(gameId: Long, playerId: Long, tradeId: Long)
 
 GET     /games/:gameId/players/:playerId/chats             controllers.ApplicationController.getLatestChats(gameId: Long, playerId: Long)
-POST    /games/:gameId/chats                               controllers.ApplicationController.postChat(gameId: Long)
+POST    /games/:gameId/players/:playerId/chats             controllers.ApplicationController.postChat(gameId: Long, playerId: Long)
 
 GET     /form/games                                        controllers.FormController.listGames
 GET     /form/games/:gameId                                controllers.FormController.showGameForm(gameId: Long)

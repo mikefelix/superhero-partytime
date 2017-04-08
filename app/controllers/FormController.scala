@@ -190,11 +190,12 @@ class FormController @Inject()(implicit configuration: Configuration, val messag
       playerForm.bindFromRequest.fold(
         formWithErrors => {
           Redirect(routes.FormController.showPlayerForm(gameId, playerId))
-            .flashing("error" -> formWithErrors.errors.map(_.message).mkString(", "))
+            .flashing("error" -> formWithErrors.errors.map(e => e.key + ":" + e.message).mkString(", "))
         },
         player => {
-          dao.updatePlayerWithQuest(player) map { u =>
-            Ok
+//          dao.updatePlayer(Player(player.id, gameId, player.name, player.alias)) map { u =>
+          dao.updatePlayerWithQuest(player.copy(id = playerId)) map { u =>
+            Redirect(routes.FormController.showPlayerForm(gameId, playerId))
           }
         }
       )

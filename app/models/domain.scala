@@ -45,13 +45,13 @@ case class Game(id: Long, name: String, started: Boolean) extends Model {
 case class ChatDetail(id: Long, game: Long, poster: Option[Long], posterName: String, chat: String)
 
 object ChatDetail {
-  def apply(chat: Chat, posterPlayer: Player) = {
-    val name = if (chat.poster.isEmpty || chat.poster.get == 0L)
-      "System"
-    else
-      s"${posterPlayer.alias} (${posterPlayer.name})"
+  def apply(chat: Chat, posterPlayer: Option[Player]) = {
+    val name = posterPlayer match {
+      case Some(player) => s"${player.alias} (${player.name})"
+      case _ => "System"
+    }
 
-    new ChatDetail(chat.id, chat.game, Some(posterPlayer.id), name, chat.chat)
+    new ChatDetail(chat.id, chat.game, posterPlayer.map(_.id), name, chat.chat)
   }
 }
 
@@ -62,7 +62,7 @@ case class Chat(id: Long, game: Long, poster: Option[Long], recipient: Option[Lo
     (body \ "poster").validateOpt[Long].get,
     (body \ "recipient").validateOpt[Long].get,
     Util.jsSafe((body \ "chat").validate[String].get),
-    (body \ "created").validate[Date].get
+    new Date(new java.util.Date().getTime)
   )
 
   def toJson(extras: (String, JsValueWrapper)*) = Json.obj(
@@ -142,10 +142,11 @@ case class Power(id: Long, game: Long, name: String, description: String) extend
 }
 
 object TradeStage {
-  val Rejected = 0
+  val Creating = 0
   val Offered = 1
   val Counteroffered = 2
   val Accepted = 3
+  val Rejected = 4
 }
 
 case class Trade(id: Long, game: Long, offerer: Long, offeree: Long,

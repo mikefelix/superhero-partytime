@@ -13,6 +13,8 @@
 
         @helper.inputText(form("name"))
 
+        @helper.inputText(form("alias"))
+
         @helper.select(form("quest"), allQuests, '_label -> "Current quest", '_default -> "-- Select quest --", '_showConstraints -> false)
 
         @helper.select(form("item1"), allItems, '_label -> "Item 1", '_default -> "-- Select item --", '_showConstraints -> false)
