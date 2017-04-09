@@ -77,7 +77,7 @@ class FormController @Inject()(implicit configuration: Configuration, val messag
       "name" -> text,
       "description" -> text,
       "game" -> ignored(0L),
-      "master" -> ignored(0L),
+      "master" -> optional(longNumber),
       "item1" -> optional(longNumber),
       "item2" -> optional(longNumber),
       "item3" -> optional(longNumber),
@@ -141,7 +141,7 @@ class FormController @Inject()(implicit configuration: Configuration, val messag
   def showQuestForm(gameId: Long, questId: Long) = Action.async { implicit request =>
     withGame(gameId) { game =>
       val quest = if (questId < 1)
-        Future(Some(new QuestDescription(questId, "", "", game.id, 0)))
+        Future(Some(new QuestDescription(questId, "", "", game.id, None)))
       else
         findQuestDescById(questId)
 

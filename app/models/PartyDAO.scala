@@ -339,10 +339,11 @@ object PartyDAO {
 
   def findLatestChats(gameId: Long, playerId: Long, num: Int): Future[Seq[ChatDetail]] = {
     val q = for {
-      chat <- chats.sortBy(_.id) if chat.game === gameId && chat.poster.nonEmpty
+      chat <- chats.sortBy(_.id.asc) if chat.game === gameId && chat.poster.nonEmpty
       poster <- players if poster.id === chat.poster
     } yield (chat, poster)
 
+    q.take(num).result.statements.foreach(println)
     db.run(q.take(num).result) map { (seq: Seq[(Chat, Player)]) =>
       seq map { case (msg, poster) => ChatDetail(msg, Some(poster))}
     }
@@ -378,7 +379,7 @@ object PartyDAO {
           powersNeeded <- findPowersByQuest(quest.id)
           itemsHeld <- findItemsHeldByPlayers(quest.id)
           powersHeld <- findPowersHeldByPlayers(quest.id)
-          Some(master) <- findMasterForQuest(quest.id)
+          master <- findMasterForQuest(quest.id)
           itemsForQuest = getItemsNeeded(itemsNeeded, itemsHeld)
           powersForQuest = getPowersNeeded(powersNeeded, powersHeld)
         } yield Some(QuestDescription(quest, master, itemsForQuest, powersForQuest))
@@ -393,7 +394,7 @@ object PartyDAO {
       powersNeeded <- findPowersByQuest(quest.id)
       itemsHeld <- findItemsHeldByPlayers(quest.id)
       powersHeld <- findPowersHeldByPlayers(quest.id)
-      Some(master) <- findMasterForQuest(quest.id)
+      master <- findMasterForQuest(quest.id)
       itemsForQuest = getItemsNeeded(itemsNeeded, itemsHeld)
       powersForQuest = getPowersNeeded(powersNeeded, powersHeld)
     } yield Some(QuestDescription(quest, master, itemsForQuest, powersForQuest)): Option[QuestDescription]
@@ -509,7 +510,8 @@ object PartyDAO {
   }
 
   def findQuestDescsByGameId(gameId: Long): Future[Seq[QuestDescription]] = {
-    findQuestsByGame(gameId) flatMap { quests =>
+    findQuestsByGame(gameId) flatMap { questss =>
+      val quests = questss.take(1)
       Future.sequence {
         for {
           quest <- quests
@@ -518,7 +520,7 @@ object PartyDAO {
           powersNeeded <- findPowersByQuest(quest.id)
           itemsHeld <- findItemsHeldByPlayers(quest.id)
           powersHeld <- findPowersHeldByPlayers(quest.id)
-          Some(master) <- findMasterForQuest(quest.id)
+          master <- findMasterForQuest(quest.id)
           itemsForQuest = getItemsNeeded(itemsNeeded, itemsHeld)
           powersForQuest = getPowersNeeded(powersNeeded, powersHeld)
         } yield QuestDescription(quest, master, itemsForQuest, powersForQuest)

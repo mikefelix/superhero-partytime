@@ -180,7 +180,7 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
     }
   }
 
-  val NoQuest = QuestDescription(0, "None", "", 0, 0, None, None, None, None, None, None)
+  val NoQuest = QuestDescription(0, "None", "", 0, None, None, None, None, None, None, None)
 
   def getSidequestForPlayer(gameId: Long, playerId: Long) = Action.async { implicit req =>
     Some(playerId) match {//req.player match {
@@ -446,7 +446,7 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
     
     s"""{"id":${quest.id},
         |"name":"${jsSafe(quest.name)}",
-        |"master":${quest.master},
+        |"master":${quest.master.getOrElse("null")},
         |"description":"${jsSafe(quest.description)}",
         |"items":[${items.mkString(",")}],
         |"powers":[${powers.mkString(",")}]
