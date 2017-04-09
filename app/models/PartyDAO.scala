@@ -510,8 +510,7 @@ object PartyDAO {
   }
 
   def findQuestDescsByGameId(gameId: Long): Future[Seq[QuestDescription]] = {
-    findQuestsByGame(gameId) flatMap { questss =>
-      val quests = questss.take(1)
+    findQuestsByGame(gameId) flatMap { quests =>
       Future.sequence {
         for {
           quest <- quests
