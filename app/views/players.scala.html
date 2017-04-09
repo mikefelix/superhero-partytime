@@ -15,7 +15,7 @@
 
     <hr/>
     @players.map { p =>
-            <h3><a href="@link(p.id)">@p.name</a></h3>
+            <h3><a href="@link(p.id)">@p.name</a> (score: @p.score)</h3>
             @if(p.mainQuest.nonEmpty) {
                 <div style="margin-bottom: 10px">Quest: <a href="@routes.FormController.showQuestForm(game.id, p.mainQuest.get.id)">@p.mainQuest.get.name</a></div>
             }

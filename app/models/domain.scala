@@ -76,19 +76,21 @@ case class Chat(id: Long, game: Long, poster: Option[Long], recipient: Option[Lo
   )
 }
 
-case class Player(id: Long, game: Long, name: String, alias: String) extends Model {
-  def this(id: Long) = this(id, 0, "", "")
+case class Player(id: Long, game: Long, name: String, alias: String, score: Int) extends Model {
+  def this(id: Long) = this(id, 0, "", "", 0)
   def this(body: JsValue) = this(
     (body \ "id").validate[Long].getOrElse(-1L),
     (body \ "game").validate[Long].get,
     (body \ "name").validate[String].get,
-    (body \ "alias").validate[String].get
+    (body \ "alias").validate[String].get,
+    0
   )
 
   def toJson(extras: (String, JsValueWrapper)*) = Json.obj(
     ("id" -> js(id)) +:
     ("game" -> js(game)) +:
     ("name" -> js(name)) +:
+    ("score" -> js(score)) +:
     extras: _*
   )
 }
@@ -149,6 +151,34 @@ object TradeStage {
   val Rejected = 4
 }
 
+object InviteStage {
+  val Creating = 0
+  val Offered = 1
+  val Accepted = 2
+  val Rejected = 3
+}
+
+case class Invite(id: Long, game: Long, inviter: Long, invitee: Long, quest: Long, stage: Int) extends Model {
+  def this(body: JsValue) = this(
+    (body \ "id").validate[Long].getOrElse(-1L),
+    (body \ "game").validate[Long].get,
+    (body \ "inviter").validate[Long].get,
+    (body \ "invitee").validate[Long].get,
+    0,
+    (body \ "stage").validate[Int].get
+  )
+
+  def toJson(extras: (String, JsValueWrapper)*) = Json.obj(
+     ("id" -> js(id)) +:
+     ("game" -> js(game)) +:
+     ("inviter" -> js(inviter)) +:
+     ("invitee" -> js(invitee)) +:
+//     ("quest" -> js(quest)) +:
+     ("stage" -> js(stage)) +:
+     extras: _*
+   )
+}
+
 case class Trade(id: Long, game: Long, offerer: Long, offeree: Long,
                  offererItem: Option[Long], offereeItem: Option[Long],
                  offererOther: Option[String], offereeOther: Option[String],
@@ -169,21 +199,19 @@ case class Trade(id: Long, game: Long, offerer: Long, offeree: Long,
     ("id" -> js(id)) +:
     ("game" -> js(game)) +:
     ("offerer" -> js(offerer)) +:
-    ("offeree" -> js(offerer)) +:
+    ("offeree" -> js(offeree)) +:
     ("offererItem" -> js(offererItem)) +:
     ("offereeItem" -> js(offereeItem)) +:
     ("offererOther" -> js(offererOther)) +:
     ("offereeOther" -> js(offereeOther)) +:
-    ("offered" -> js(offered)) +:
-    ("counteroffered" -> js(counteroffered)) +:
-    ("accepted" -> js(accepted)) +:
+    ("stage" -> js(stage)) +:
     extras: _*
   )
 
-  def accepted = stage >= 3
-  def counteroffered = stage >= 2
-  def offered = stage >= 1
-  def rejected = stage == 0
+  def accepted = stage == TradeStage.Accepted
+  def counteroffered = stage == TradeStage.Counteroffered
+  def offered = stage == TradeStage.Offered
+  def rejected = stage == TradeStage.Rejected
 }
 
 
@@ -263,6 +291,18 @@ class Trades(tag: Tag) extends Table[Trade](tag, "trades") {
   def * = (id, game, offerer, offeree, offererItem, offereeItem, offererOther, offereeOther, stage) <> (Trade.tupled, Trade.unapply)
 }
 
+class Invites(tag: Tag) extends Table[Invite](tag, "invites") {
+
+  def id = column[Long]("id", O.AutoInc, O.PrimaryKey)
+  def game = column[Long]("game")
+  def offerer = column[Long]("inviter")
+  def offeree = column[Long]("invitee")
+  def quest = column[Long]("quest")
+  def stage = column[Int]("stage")
+
+  def * = (id, game, offerer, offeree, quest, stage) <> (Invite.tupled, Invite.unapply)
+}
+
 class Games(tag: Tag) extends Table[Game](tag, "games") {
 
   def id = column[Long]("id", O.AutoInc, O.PrimaryKey)
@@ -279,8 +319,9 @@ class Players(tag: Tag) extends Table[Player](tag, "players") {
   def game = column[Long]("game")
   def name = column[String]("name")
   def alias = column[String]("alias")
+  def score = column[Int]("score")
 
-  def * = (id, game, name, alias) <> (Player.tupled, Player.unapply)
+  def * = (id, game, name, alias, score) <> (Player.tupled, Player.unapply)
 //    def ? = (id.?, gameId.?, name.?).shaped.<>({ r => r._1.map(_ => Player.tupled((r._1.get, r._2.get, r._3.get))) }, (_: Any) => throw new Exception("Inserting into ? projection not supported."))
 }
 
@@ -347,7 +388,7 @@ class QuestPowers(tag: Tag) extends Table[QuestPower](tag, "quest_powers"){
   def * = (quest, power) <> (QuestPower.tupled, QuestPower.unapply)
 }
 
-case class PlayerDescription(id: Long, game: Long, name: String, alias: String, mainQuest: Option[Quest], sideQuest: Option[Quest],
+case class PlayerDescription(id: Long, game: Long, name: String, alias: String, score: Int, mainQuest: Option[Quest], sideQuest: Option[Quest],
                              item1: Option[Item], item2: Option[Item], item3: Option[Item], item4: Option[Item], item5: Option[Item],
                              power1: Option[Power], power2: Option[Power], power3: Option[Power]
                             ){
@@ -356,19 +397,19 @@ case class PlayerDescription(id: Long, game: Long, name: String, alias: String, 
 }
 
 object PlayerDescription {
-  def applyIds(id: Long, game: Long, name: String, alias: String, mainQuest: Option[Long], sideQuest: Option[Long],
+  def applyIds(id: Long, game: Long, name: String, alias: String, score: Int, mainQuest: Option[Long], sideQuest: Option[Long],
                item1: Option[Long], item2: Option[Long], item3: Option[Long], item4: Option[Long], item5: Option[Long],
                power1: Option[Long], power2: Option[Long], power3: Option[Long]) = {
-    new PlayerDescription(id, game, name, alias, mainQuest.map(new Quest(_)), sideQuest.map(new Quest(_)),
+    new PlayerDescription(id, game, name, alias, score, mainQuest.map(new Quest(_)), sideQuest.map(new Quest(_)),
       item1.map(new Item(_)), item2.map(new Item(_)), item3.map(new Item(_)), item4.map(new Item(_)), item5.map(new Item(_)),
       power1.map(new Power(_)), power2.map(new Power(_)), power3.map(new Power(_))
     )
   }
 
-  def unapplyIds(pd: PlayerDescription): Option[(Long, Long, String, String, Option[Long], Option[Long],
+  def unapplyIds(pd: PlayerDescription): Option[(Long, Long, String, String, Int, Option[Long], Option[Long],
     Option[Long], Option[Long], Option[Long], Option[Long], Option[Long],
     Option[Long], Option[Long], Option[Long])] = {
-    Some(pd.id, pd.game, pd.name, pd.alias, pd.mainQuest.map(_.id), pd.sideQuest.map(_.id),
+    Some(pd.id, pd.game, pd.name, pd.alias, pd.score, pd.mainQuest.map(_.id), pd.sideQuest.map(_.id),
       pd.item1.map(_.id), pd.item2.map(_.id), pd.item3.map(_.id), pd.item4.map(_.id), pd.item5.map(_.id),
       pd.power1.map(_.id), pd.power2.map(_.id), pd.power3.map(_.id)
     )
@@ -378,7 +419,7 @@ object PlayerDescription {
     def maybeItem(i: Int) = if (items.size > i) Some(items(i)) else None
     def maybePower(i: Int) = if (powers.size > i) Some(powers(i)) else None
 
-    new PlayerDescription(player.id, player.game, player.name, player.alias, mainQuest, sideQuest,
+    new PlayerDescription(player.id, player.game, player.name, player.alias, player.score, mainQuest, sideQuest,
       maybeItem(0), maybeItem(1), maybeItem(2), maybeItem(3), maybeItem(4),
       maybePower(0), maybePower(1), maybePower(2)
     )

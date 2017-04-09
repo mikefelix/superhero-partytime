@@ -13,7 +13,7 @@ class CorsFilter @Inject() (implicit val mat: Materializer, ec: ExecutionContext
     nextFilter(request).map { result =>
       result.withHeaders(
         "Access-Control-Allow-Origin" -> "*",
-        "Access-Control-Allow-Methods" -> "*",
+        "Access-Control-Allow-Methods" -> "GET,POST,PUT,PATCH,DELETE,OPTIONS",
         "Access-Control-Allow-Headers" -> headers.mkString(","),
         "Access-Control-Allow-Credentials" -> "true",
         "Access-Control-Max-Age" -> (60 * 60 * 24).toString // 1 Day

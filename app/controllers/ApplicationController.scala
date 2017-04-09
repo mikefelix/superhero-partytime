@@ -27,10 +27,6 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
     }
   }
 
-  def login = Action { implicit req =>
-    Ok(s"""{"player":1}""")
-  }
-
 /*
   def postGame = Action.async { implicit req =>
     req.body.asText.map(Json.parse).asGame match {
@@ -113,8 +109,8 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
     }
   }
 
-  def getLatestChats(gameId: Long, playerId: Long) = Action.async { implicit req =>
-    dao.findLatestChats(gameId, playerId, 100) map { chats =>
+  def getLatestChats(gameId: Long) = Action.async { implicit req =>
+    dao.findLatestChats(gameId, 100) map { chats =>
       Ok(chats.toJson)
     }
   }
@@ -125,7 +121,7 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
     }
   }
 
-  def clearAlert(gameId: Long, playerId: Long, id: Long) = Action.async { implicit req =>
+  def clearAlert(gameId: Long, id: Long) = Action.async { implicit req =>
     dao.clearAlert(id) map { res =>
       NoContent
     }
@@ -137,6 +133,20 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
       offersReceived <- dao.findTradesByOfferer(gameId)
       offers = offersGiven ++ offersReceived
     } yield Ok(offers.toJson)
+  }
+
+  def getTrade(gameId: Long, playerId: Long, id: Long) = Action.async { implicit req =>
+    dao.findTradeById(id) map {
+      case Some(trade) => Ok(trade.toJson())
+      case _ => NotFound
+    }
+  }
+
+  def getInvite(gameId: Long, playerId: Long, id: Long) = Action.async { implicit req =>
+    dao.findInviteById(id) map {
+      case Some(invite) => Ok(invite.toJson())
+      case _ => NotFound
+    }
   }
 
   def getQuest(gameId: Long, id: Long) = Action.async { implicit req =>
@@ -254,17 +264,22 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
       case None => BadRequest
       case Some(postedPlayer) =>
         dao.findGameById(gameId) flatMap { case Some(game) =>
-          dao.insertPlayer(postedPlayer) flatMap { player =>
-            if (game.started){
-              dao.assignItems(player, 2)
-              dao.assignPowers(player, 2)
-              dao.assignNewQuest(player.id)
-            }
+          try {
+            dao.insertPlayer(postedPlayer) flatMap { player =>
+              if (game.started) {
+                println(s"Game is started. Giving powers and items to new player.")
+                dao.assignItems(player, 2)
+                dao.assignPowers(player, 2)
+                dao.assignNewQuest(player.id)
+              }
 
-            dao.findPlayerDescById(player.id) map {
-              case Some(dbPlayer) => Created(dbPlayer.toJson)
-              case _ => BadRequest
+              dao.findPlayerDescById(player.id) map {
+                case Some(dbPlayer) => Created(dbPlayer.toJson)
+                case _ => BadRequest
+              }
             }
+          } catch {
+            case e: Exception => Conflict
           }
         }
     }
@@ -285,6 +300,13 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
     override val descriptionToReceiver = s"you will receive $other in return"
   }
 
+  class PointsTransfer(giver: Player, receiver: Player, points: Int) extends Transfer {
+    private def desc = s"$points point${if (points == 1) "" else "s"}"
+
+    override val descriptionToGiver = s"You will give $desc to ${receiver.alias}"
+    override val descriptionToReceiver = s"you will receive $desc in return"
+  }
+
   private def transferItem(itemId: Long, giverId: Long, receiverId: Long): Future[Transfer] = {
     dao.findPlayerById(giverId) flatMap {
       case None =>
@@ -299,43 +321,77 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
                 throw new IllegalStateException(s"Invalid item for transfer: $itemId")
               case Some(item) =>
                 dao.updateItem(item.copy(owner = Some(receiverId)))
+                println(s"Transferring item ${item.id} (${item.name}) from player ${giver.id} to player ${receiver.id}")
                 new ItemTransfer(giver, receiver, item)
             }
         }
     }
   }
 
+  private def transferOther(giver: Player, receiver: Player, other: String): Future[Transfer] = {
+    if (other.matches("\\+[0-9]+")){
+      transferPoints(giver, receiver, Integer.parseInt(other))
+    }
+    else {
+      Future successful new OtherTransfer(giver, receiver, other)
+    }
+  }
+
+  private def transferPoints(giver: Player, receiver: Player, amount: Int): Future[Transfer] = {
+    dao.transferPoints(amount, giver, receiver)
+    new PointsTransfer(giver, receiver, amount)
+  }
+
   private def tradeMessage(trade: Trade, playerId: Long, transferToOfferee: Transfer, transferToOfferer: Transfer): String = {
     val playerIsOfferer = trade.offerer == playerId
 
     if (playerIsOfferer){
-      s"Trade negotiated. ${transferToOfferee.descriptionToGiver} and ${transferToOfferer.descriptionToReceiver}."
+      tradeJson(s"Trade negotiated. ${transferToOfferee.descriptionToGiver} and ${transferToOfferer.descriptionToReceiver}.")
     }
     else {
-      s"Trade negotiated. ${transferToOfferer.descriptionToGiver} and ${transferToOfferee.descriptionToReceiver}."
+      tradeJson(s"Trade negotiated. ${transferToOfferer.descriptionToGiver} and ${transferToOfferee.descriptionToReceiver}.")
+    }
+  }
+
+  def postInvite(gameId: Long, playerId: Long) = Action.async { implicit req =>
+    req.body.asText.map(Json.parse).asInvite match {
+      case None => BadRequest
+      case Some(invite) => for (id <- dao.insertInvite(invite)) yield Ok(tradeJson("Invitation sent."))
+    }
+  }
+
+  def putInvite(gameId: Long, playerId: Long, inviteId: Long) = Action.async { implicit req =>
+    req.body.asText.map(Json.parse).asInvite match {
+      case None => BadRequest
+      case Some(invite) =>
+        dao.updateInvite(invite) map { res =>
+          Ok(tradeJson(res))
+        }
     }
   }
 
   def postTrade(gameId: Long, playerId: Long) = Action.async { implicit req =>
     req.body.asText.map(Json.parse).asTrade match {
       case None => BadRequest
-      case Some(trade) => for (id <- dao.insertTrade(trade)) yield Created(id.toString)
+      case Some(trade) => for (id <- dao.insertTrade(trade)) yield Ok(tradeJson("Trade proposed."))
     }
   }
+
+  private def tradeJson(msg: String) = s"""{"message":"${jsSafe(msg)}"}"""
 
   def putTrade(gameId: Long, playerId: Long, tradeId: Long) = Action.async { implicit req =>
     req.body.asText.map(Json.parse).asTrade match {
       case None => BadRequest
       case Some(trade) =>
         if (trade.rejected) {
-          Ok("Trade cancelled")
+          Ok(tradeJson("Trade cancelled."))
         }
         else if (!trade.accepted) {
           for (id <- dao.updateTrade(trade)) yield
             if (trade.counteroffered)
-              Ok(s"Counteroffer sent")
+              Ok(tradeJson("Counteroffer sent."))
             else if (trade.offered)
-              Ok(s"Offer sent")
+              Ok(tradeJson("Offer sent."))
             else
               InternalServerError
         }
@@ -365,26 +421,26 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
       case (None, Some(offererOther), Some(offereeItem), _) =>
         for {
           transferToOfferer <- transferItem(offereeItem, trade.offeree, trade.offerer)
-          transferToOfferee = new OtherTransfer(offerer, offeree, offererOther)
+          transferToOfferee <- transferOther(offerer, offeree, offererOther)
           traded <- dao.updateTrade(trade)
         } yield Ok(tradeMessage(trade, playerId, transferToOfferee, transferToOfferer))
 
       case (Some(offererItem), _, None, Some(offereeOther)) =>
         for {
           transferToOfferee <- transferItem(offererItem, trade.offerer, trade.offeree)
-          transferToOfferer = new OtherTransfer(offeree, offerer, offereeOther)
+          transferToOfferer <- transferOther(offeree, offerer, offereeOther)
           traded <- dao.updateTrade(trade)
         } yield Ok(tradeMessage(trade, playerId, transferToOfferee, transferToOfferer))
 
       case (None, Some(offererOther), None, Some(offereeOther)) =>
-        val transferToOfferee = new OtherTransfer(offerer, offeree, offererOther)
-        val transferToOfferer = new OtherTransfer(offeree, offerer, offereeOther)
-
         for {
+          transferToOfferee <- transferOther(offerer, offeree, offererOther)
+          transferToOfferer <- transferOther(offeree, offerer, offereeOther)
           traded <- dao.updateTrade(trade)
         } yield Ok(tradeMessage(trade, playerId, transferToOfferee, transferToOfferer))
 
-      case _ => throw new IllegalStateException(s"Need one offer from each player. Got ${(trade.offererItem, trade.offererOther, trade.offereeItem, trade.offereeOther)}")
+      case _ => throw new IllegalStateException(s"Need one offer from each player. Got ${(trade.offererItem,
+        trade.offererOther, trade.offereeItem, trade.offereeOther)}")
     }
   }
 
@@ -492,7 +548,8 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
         | "mainquest": $mainQuest,
         | "sidequest": $sideQuest,
         | "items":[${items.mkString(",")}],
-        | "powers":[${powers.mkString(",")}]
+        | "powers":[${powers.mkString(",")}],
+        | "score":${player.score}
         |}""".stripMargin
   }
 
@@ -577,6 +634,7 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
     def asItem = get(body, new Item(_))
     def asPower = get(body, new Power(_))
     def asTrade = get(body, new Trade(_))
+    def asInvite = get(body, new Invite(_))
     def asQuest = get(body, new Quest(_))
     def asGame = get(body, new Game(_))
     def asChat = get(body, new Chat(_))

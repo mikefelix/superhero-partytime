@@ -3,7 +3,7 @@
 # ~~~~
 
 # An example controller showing a sample home page
-POST    /login                                             controllers.ApplicationController.login
+#POST    /login                                             controllers.ApplicationController.login
 GET     /games/:id                                         controllers.ApplicationController.getGame(id: Long)
 #POST    /games                                             controllers.ApplicationController.postGame
 
@@ -33,13 +33,18 @@ DELETE  /games/:gameId/players/:id                         controllers.Applicati
 GET     /games/:gameId/players/:playerId/offeroptions      controllers.ApplicationController.getOfferOptions(gameId: Long, playerId: Long)
 
 GET     /games/:gameId/players/:playerId/trades            controllers.ApplicationController.listTradesForPlayer(gameId: Long, playerId: Long)
+GET     /games/:gameId/players/:playerId/trades/:tradeId   controllers.ApplicationController.getTrade(gameId: Long, playerId: Long, tradeId: Long)
 POST    /games/:gameId/players/:playerId/trades            controllers.ApplicationController.postTrade(gameId: Long, playerId: Long)
 PUT     /games/:gameId/players/:playerId/trades/:tradeId   controllers.ApplicationController.putTrade(gameId: Long, playerId: Long, tradeId: Long)
 
-GET     /games/:gameId/players/:playerId/chats             controllers.ApplicationController.getLatestChats(gameId: Long, playerId: Long)
+GET     /games/:gameId/players/:playerId/invites/:inviteId controllers.ApplicationController.getInvite(gameId: Long, playerId: Long, inviteId: Long)
+POST    /games/:gameId/players/:playerId/invites           controllers.ApplicationController.postInvite(gameId: Long, playerId: Long)
+PUT     /games/:gameId/players/:playerId/invites/:inviteId controllers.ApplicationController.putInvite(gameId: Long, playerId: Long, inviteId: Long)
+
+GET     /games/:gameId/chats                               controllers.ApplicationController.getLatestChats(gameId: Long)
 POST    /games/:gameId/players/:playerId/chats             controllers.ApplicationController.postChat(gameId: Long, playerId: Long)
 GET     /games/:gameId/players/:playerId/alerts            controllers.ApplicationController.getAlerts(gameId: Long, playerId: Long)
-DELETE  /games/:gameId/players/:playerId/alerts/:id        controllers.ApplicationController.clearAlert(gameId: Long, playerId: Long, id: Long)
+DELETE  /games/:gameId/alerts/:id                          controllers.ApplicationController.clearAlert(gameId: Long, id: Long)
 
 GET     /form/games                                        controllers.FormController.listGames
 GET     /form/games/:gameId                                controllers.FormController.showGameForm(gameId: Long)
@@ -66,6 +71,9 @@ POST    /form/games/:gameId/powers/:id                     controllers.FormContr
 GET     /                                                  controllers.FormController.login()
 POST    /form/login                                        controllers.FormController.authenticate()
 
+OPTIONS /$path<.*>                                         controllers.OptionsController.options(path)
+
 # Map static resources from the /public folder to the /assets URL path
 #GET     /assets/*file                                      controllers.Assets.versioned(path="/public", file: Asset)
 GET     /assets/*file                                      controllers.Assets.at(path="/public", file)
+

@@ -22,6 +22,7 @@ object PartyDAO {
   val items = TableQuery[Items]
   val powers = TableQuery[Powers]
   val trades = TableQuery[Trades]
+  val invites = TableQuery[Invites]
   val playerQuests = TableQuery[PlayerQuests]
   val questItems = TableQuery[QuestItems]
   val questPowers = TableQuery[QuestPowers]
@@ -34,9 +35,10 @@ object PartyDAO {
       items.map(_.owner).update(None),
       playerPowers.delete,
       playerQuests.delete,
-      trades.delete,
-      chats.delete
-//      players.delete
+      trades.filter(_.id === game.id).delete,
+      chats.filter(_.id === game.id).delete,
+      games.filter(_.id === game.id).map(_.started).update(false),
+      players.filter(_.id === game.id).delete
     ))
   }
 
@@ -135,6 +137,15 @@ object PartyDAO {
     }
   }
 
+  def transferPoints(amount: Int, giver: Player, receiver: Player): Future[Unit] = {
+    val newGiverScore = giver.score - amount
+    val newReceiverScore = receiver.score + amount
+    db.run(DBIO.seq(
+      players.filter(_.id === giver.id).map(_.score).update(newGiverScore),
+      players.filter(_.id === receiver.id).map(_.score).update(newReceiverScore)
+    ))
+  }
+
   def updateQuest(quest: Quest): Future[Int] = db.run(questById(quest.id).update(quest))
   def updateQuest(quest: QuestDescription): Future[List[Int]] = {
     val actions = DBIO.sequence(List(
@@ -168,7 +179,7 @@ object PartyDAO {
     } yield (player, items, powers, mainQuest, sideQuest)) map {
       case (playerOpt, itemsForPlayer, powersForPlayer, mainQuestForPlayer, sideQuestForPlayer) =>
         playerOpt map { player =>
-          PlayerDescription(player.id, player.game, player.name, player.alias, mainQuestForPlayer, sideQuestForPlayer,
+          PlayerDescription(player.id, player.game, player.name, player.alias, player.score, mainQuestForPlayer, sideQuestForPlayer,
             itemsForPlayer.option(0), itemsForPlayer.option(1), itemsForPlayer.option(2), itemsForPlayer.option(3), itemsForPlayer.option(4),
             powersForPlayer.option(0), powersForPlayer.option(1), powersForPlayer.option(2))
         }
@@ -191,40 +202,46 @@ object PartyDAO {
   }
 
   def insertTrade(trade: Trade): Future[Int] = {
-    println(s"Insert trade ${trade.toJson()}")
-    if (trade.offererItem.nonEmpty){
+    val newTradeFuture: Future[Trade] = if (trade.offererItem.nonEmpty){
       findItemById(trade.offererItem.get) flatMap {
-        case None => throw new IllegalStateException()
         case Some(offererItem) =>
           if (trade.offereeItem.nonEmpty){
             findItemById(trade.offereeItem.get) flatMap {
-              case None => throw new IllegalStateException()
               case Some(offereeItem) =>
                 // Insert trade with two items
-                db.run(trades += trade.copy(offererOther = Some(offererItem.name), offereeOther = Some(offereeItem.name)))
+                Future successful trade.copy(offererOther = Some(offererItem.name), offereeOther = Some(offereeItem.name))
             }
           }
           else {
             // Insert trade with item from offerer
-            db.run(trades += trade.copy(offererOther = Some(offererItem.name)))
+            Future successful trade.copy(offererOther = Some(offererItem.name))
           }
       }
     }
     else if (trade.offereeItem.nonEmpty){
-      findItemById(trade.offereeItem.get) flatMap {
-        case None => throw new IllegalStateException()
+      findItemById(trade.offereeItem.get) map {
         case Some(offereeItem) =>
           // Insert trade with offeree item
-          db.run(trades += trade.copy(offereeOther = Some(offereeItem.name)))
+          trade.copy(offereeOther = Some(offereeItem.name))
       }
     }
     else {
       // Insert trade with no items
-      db.run(trades += trade)
+      Future successful trade
     }
 
-    findPlayerById(trade.offerer) flatMap {
-      case Some(offerer) => addSystemChat(trade.game, trade.offeree, s"Trade request from ${offerer.alias}.")
+
+    newTradeFuture flatMap { newTrade =>
+      val insertQuery = trades returning trades.map(_.id) into ((trade, id) => trade.copy(id = id))
+
+      println(s"Insert trade: $newTrade")
+      db.run(insertQuery += newTrade) flatMap { trade =>
+        findPlayerById(trade.offerer) flatMap {
+          case Some(offerer) =>
+            println(s"Give an alert for trade ${trade.id} to ${trade.offeree}")
+            addAlert(trade.game, trade.offeree, s"Trade request from ${offerer.alias} {${trade.id}}")
+        }
+      }
     }
   }
 
@@ -234,18 +251,48 @@ object PartyDAO {
     trade.stage match {
       case TradeStage.Counteroffered =>
         findPlayerById(trade.offeree) flatMap {
-          case Some(offeree) => addSystemChat(trade.game, trade.offerer, s"Trade response from ${offeree.alias}.")
+          case Some(offeree) => addAlert(trade.game, trade.offerer, s"Trade response from ${offeree.alias} {${trade.id}}")
         }
       case TradeStage.Accepted =>
         findPlayerById(trade.offerer) flatMap {
-          case Some(offerer) => addSystemChat(trade.game, trade.offeree, s"Trade completed with ${offerer.alias}.")
+          case Some(offerer) => addAlert(trade.game, trade.offeree, s"Trade completed with ${offerer.alias} {${trade.id}}")
         }
       case TradeStage.Rejected =>
         findPlayerById(trade.offerer) flatMap {
-          case Some(offerer) => addSystemChat(trade.game, trade.offeree, s"Trade rejected by ${offerer.alias}.")
+          case Some(offerer) => addAlert(trade.game, trade.offeree, s"Trade rejected by ${offerer.alias} {${trade.id}}")
         }
       case _ =>
         throw new IllegalStateException("Didn't expect trade stage " + trade.stage + " here.")
+    }
+  }
+
+  def insertInvite(invite: Invite): Future[Int] = {
+    val insertQ = invites returning invites.map(_.id) into ((invite, id) => invite.copy(id = id))
+    db.run(insertQ += invite) flatMap { inserted =>
+      addAlert(invite.game, invite.invitee, s"Quest invitation received {${inserted.id}}")
+    }
+  }
+
+  def updateInvite(invite: Invite): Future[String] = {
+    db.run(invites.filter(_.id === invite.id).update(invite)) map { res =>
+      if (invite.stage == InviteStage.Accepted){
+        findQuestByPlayer(invite.inviter, side = false) flatMap { case Some(mainQuest) =>
+          db.run(DBIO.seq(
+            playerQuests.filter(q => q.player === invite.invitee && q.side === true).delete,
+            playerQuests += PlayerQuest(invite.invitee, mainQuest.id, side = true, completed = false)
+          ))
+
+          addAlert(invite.game, invite.inviter, s"Quest invitation accepted {${invite.id}}")
+        }
+
+        "Invitation accepted."
+      }
+      else if (invite.stage == InviteStage.Rejected) {
+        addAlert(invite.game, invite.inviter, s"Quest invitation rejected {${invite.id}}")
+        "Invitation declined."
+      }
+      else
+        "Invitation updated."
     }
   }
 
@@ -305,9 +352,42 @@ object PartyDAO {
   def findGameById(id: Long): Future[Option[Game]] = db.run(gameById(id).result.headOption)
   def findStartedGameById(id: Long): Future[Option[Game]] = db.run(gameById(id, started = true).result.headOption)
 
-  def findTradeById(id: Long): Future[Option[Trade]] = db.run(tradeById(id).result.headOption)
+  def findTradeById(id: Long): Future[Option[Trade]] = {
+    db.run(tradeById(id).result.headOption) flatMap {
+      case None => Future successful None
+      case Some(trade) =>
+        val f = trade match {
+          case Trade(id, game, offerer, offeree, Some(offererItemId), Some(offereeItemId), _, _, stage) =>
+            for {
+              offererItem <- findItemById(offererItemId)
+              offereeItem <- findItemById(offereeItemId)
+            } yield Trade(id, game, offerer, offeree, Some(offererItemId), Some(offereeItemId),
+              offererItem.map(_.name), offereeItem.map(_.name), stage)
+
+          case Trade(id, game, offerer, offeree, Some(offererItemId), None, _, offereeOther, stage) =>
+            for {
+              offererItem <- findItemById(offererItemId)
+            } yield Trade(id, game, offerer, offeree, Some(offererItemId), None,
+              offererItem.map(_.name), offereeOther, stage)
+
+          case Trade(id, game, offerer, offeree, None, Some(offereeItemId), offererOther, _, stage) =>
+            for {
+              offereeItem <- findItemById(offereeItemId)
+            } yield Trade(id, game, offerer, offeree, None, Some(offereeItemId),
+              offererOther, offereeItem.map(_.name), stage)
+
+          case Trade(id, game, offerer, offeree, None, None, offererOther, offereeOther, stage) =>
+              Future successful Trade(id, game, offerer, offeree, None, None, offererOther, offereeOther, stage)
+        }
+
+        f map { Some(_) }
+    }
+  }
+
   def findTradesByOfferer(playerId: Long): Future[Seq[Trade]] = db.run(tradesByOfferer(playerId).result)
   def findTradesByOfferee(playerId: Long): Future[Seq[Trade]] = db.run(tradesByOfferee(playerId).result)
+
+  def findInviteById(id: Long): Future[Option[Invite]] = db.run(inviteById(id).result.headOption)
 
   def findItemById(id: Long): Future[Option[Item]] = db.run(itemById(id).result.headOption)
   def findItemsByPlayer(playerId: Long): Future[Seq[Item]] = db.run(itemsByPlayer(playerId).result)
@@ -337,13 +417,12 @@ object PartyDAO {
   def updatePower(power: Power): Future[Int] = db.run(powers.filter(_.id === power.id).update(power))
   def deletePower(id: Long): Future[Int] = db.run(powerById(id).delete)
 
-  def findLatestChats(gameId: Long, playerId: Long, num: Int): Future[Seq[ChatDetail]] = {
+  def findLatestChats(gameId: Long, num: Int): Future[Seq[ChatDetail]] = {
     val q = for {
       chat <- chats.sortBy(_.id.asc) if chat.game === gameId && chat.poster.nonEmpty
       poster <- players if poster.id === chat.poster
     } yield (chat, poster)
 
-    q.take(num).result.statements.foreach(println)
     db.run(q.take(num).result) map { (seq: Seq[(Chat, Player)]) =>
       seq map { case (msg, poster) => ChatDetail(msg, Some(poster))}
     }
@@ -367,7 +446,7 @@ object PartyDAO {
     db.run(chats += Chat(0L, gameId, Some(sender), recipient, chat, new Date(new java.util.Date().getTime)))
   }
 
-  def addSystemChat(gameId: Long, recipient: Long, chat: String) = {
+  def addAlert(gameId: Long, recipient: Long, chat: String) = {
     db.run(chats += Chat(0L, gameId, None, Some(recipient), chat, new Date(new java.util.Date().getTime)))
   }
 
@@ -457,6 +536,7 @@ object PartyDAO {
       val itemsUnownedByAnyone = items.filter(_.owner.isEmpty).result
 
       db.run(itemsUnownedByAnyone) map { list =>
+        println(s"There are ${list.size} unowned items.")
         if (list.nonEmpty){
           giveRandomItem(list)
         }
@@ -498,10 +578,12 @@ object PartyDAO {
     for (i <- 1 to number){
       db.run(powersUnownedByAnyone) map { list =>
         if (list.nonEmpty){
+          println(s"There are ${list.size} unowned powers.")
           giveRandomPower(list)
         }
         else {
           db.run(powersUnownedByPlayer) map { list =>
+            println(s"There are ${list.size} unowned powers.")
             giveRandomPower(list)
           }
         }
@@ -559,6 +641,7 @@ object PartyDAO {
   else
     games.filter(_.id === id)
 
+  private def inviteById(id: Long) = invites.filter(_.id === id)
   private def itemById(id: Long) = items.sortBy(_.name).filter(_.id === id)
   private def powerById(id: Long) = powers.sortBy(_.name).filter(_.id === id)
 
