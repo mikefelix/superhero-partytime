@@ -95,9 +95,9 @@ case class Player(id: Long, game: Long, name: String, alias: String, score: Int)
   )
 }
 
-case class ItemNeeded(id: Long, game: Long, name: String, description: String, owner: Option[Long], found: Boolean){
-  def this(item: Item, found: Boolean) = this(item.id, item.game, item.name, item.description, item.owner, found)
-  def this(id: Long) = this(new Item(id), false)
+case class ItemNeeded(id: Long, game: Long, name: String, description: String, owner: Option[Long], found: Boolean, rumor1: Option[Long], rumor2: Option[Long]){
+  def this(item: Item, found: Boolean, rumor1: Option[Long], rumor2: Option[Long]) = this(item.id, item.game, item.name, item.description, item.owner, found, rumor1, rumor2)
+  def this(id: Long) = this(new Item(id), false, None, None)
 }
 
 case class Item(id: Long, game: Long, name: String, description: String, owner: Option[Long]) extends Model with Requirement {
@@ -120,9 +120,9 @@ case class Item(id: Long, game: Long, name: String, description: String, owner: 
   )
 }
 
-case class PowerNeeded(id: Long, game: Long, name: String, description: String, found: Boolean) {
-  def this(power: Power, found: Boolean) = this(power.id, power.game, power.name, power.description, found)
-  def this(id: Long) = this(new Power(id), false)
+case class PowerNeeded(id: Long, game: Long, name: String, description: String, found: Boolean, rumor1: Option[Long], rumor2: Option[Long]) {
+  def this(power: Power, found: Boolean, rumor1: Option[Long], rumor2: Option[Long]) = this(power.id, power.game, power.name, power.description, found, rumor1, rumor2)
+  def this(id: Long) = this(new Power(id), false, None, None)
 }
 
 case class Power(id: Long, game: Long, name: String, description: String) extends Model with Requirement {

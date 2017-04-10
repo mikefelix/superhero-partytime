@@ -52,20 +52,23 @@ object PartyDAO {
     } yield (pl, it, po, qu)
 
     elements foreach {
-      case (players, items, powers, quests) =>
+      case (allPlayers, items, powers, quests) =>
+        // Give 10 points
+        db.run(players.filter(_.game === game.id).map(_.score).update(10))
+
         // Give out all the items
-        distributeEvenly(items, players) { (item, player) =>
+        distributeEvenly(items, allPlayers) { (item, player) =>
           println(s"Giving item ${item.name} to ${player.alias}")
           updateItem(item.copy(owner = Some(player.id)))
         }
 
         // Give everyone powers, making sure all powers are given twice
-        distributeEvenly(powers, players, 2) { (power, player) =>
+        distributeEvenly(powers, allPlayers, 2) { (power, player) =>
           println(s"Giving power ${power.name} to ${player.alias}")
           insertPlayerPower(player.id, power.id)
         }
 
-        distributeEvenly(players, quests) { (player, quest) =>
+        distributeEvenly(allPlayers, quests) { (player, quest) =>
           // TODO: prevent people from getting the quest that needs the item or power they already have
           println(s"Giving quest ${quest.name} to ${player.alias}")
           insertPlayerQuest(player.id, quest.id, side = false)
@@ -404,6 +407,7 @@ object PartyDAO {
   def findPowersByPlayer(playerId: Long): Future[Seq[Power]] = db.run(powersByPlayer(playerId).result)
   def findPowersByQuest(questId: Long): Future[Seq[Power]] = db.run(powersByQuest(questId).result)
   def findPowersByGame(gameId: Long): Future[Seq[Power]] = db.run(powersByGame(gameId).result)
+  def findPlayerPowersByGame(gameId: Long): Future[Seq[PlayerPower]] = db.run(playerPowersByGame(gameId).result)
   def findPowersHeldByPlayers(questId: Long): Future[Seq[PlayerPower]] = db.run(powersHeldByPlayers(questId).result)
 
   def findPlayerPowersByPlayer(playerId: Long): Future[Seq[PlayerPower]] = db.run(playerPowersByPlayer(playerId).result)
@@ -450,6 +454,30 @@ object PartyDAO {
     db.run(chats += Chat(0L, gameId, None, Some(recipient), chat, new Date(new java.util.Date().getTime)))
   }
 
+  private def addPoints(player: Player, points: Int) = {
+    db.run(players.filter(_.id === player.id).map(_.score).update(player.score + points))
+  }
+
+  def completeQuest(quest: QuestDescription, reward: Int): Future[Quest] = {
+    for {
+      Some(player) <- findPlayerById(quest.master.get)
+      added <- addPoints(player, reward)
+      newQuest <- assignRandomQuest(player, quest.id)
+    } yield newQuest
+  }
+
+  private def assignRandomQuest(player: Player, except: Long): Future[Quest] = {
+    findQuestsByGame(player.game) map { quests =>
+      val random = shuffle(quests)
+      val quest = if (random.head.id == except)
+        random.tail.head
+      else random.head
+
+      playerQuests += PlayerQuest(player.id, quest.id, side = false, completed = false)
+      quest
+    }
+  }
+
   def findQuestDescById(id: Long): Future[Option[QuestDescription]] = {
     findQuestById(id) flatMap {
       case Some(quest) =>
@@ -458,9 +486,16 @@ object PartyDAO {
           powersNeeded <- findPowersByQuest(quest.id)
           itemsHeld <- findItemsHeldByPlayers(quest.id)
           powersHeld <- findPowersHeldByPlayers(quest.id)
+
           master <- findMasterForQuest(quest.id)
-          itemsForQuest = getItemsNeeded(itemsNeeded, itemsHeld)
-          powersForQuest = getPowersNeeded(powersNeeded, powersHeld)
+          players <- findPlayersByGame(quest.game)
+
+          allItems <- findItemsByGame(quest.game)
+          allPlayerPowers <- findPlayerPowersByGame(quest.game)
+
+          itemsForQuest = getItemsNeeded(itemsNeeded, itemsHeld, allItems, players)
+          powersForQuest = getPowersNeeded(powersNeeded, powersHeld, allPlayerPowers)
+
         } yield Some(QuestDescription(quest, master, itemsForQuest, powersForQuest))
 
       case None => Future(None)
@@ -473,14 +508,47 @@ object PartyDAO {
       powersNeeded <- findPowersByQuest(quest.id)
       itemsHeld <- findItemsHeldByPlayers(quest.id)
       powersHeld <- findPowersHeldByPlayers(quest.id)
+
       master <- findMasterForQuest(quest.id)
-      itemsForQuest = getItemsNeeded(itemsNeeded, itemsHeld)
-      powersForQuest = getPowersNeeded(powersNeeded, powersHeld)
+      players <- findPlayersByGame(quest.game)
+
+      allItems <- findItemsByGame(quest.game)
+      allPlayerPowers <- findPlayerPowersByGame(quest.game)
+
+      itemsForQuest = getItemsNeeded(itemsNeeded, itemsHeld, allItems, players)
+      powersForQuest = getPowersNeeded(powersNeeded, powersHeld, allPlayerPowers)
+
     } yield Some(QuestDescription(quest, master, itemsForQuest, powersForQuest)): Option[QuestDescription]
 
     findQuestByPlayer(id, side) flatMap {
       case Some(quest) => describeQuest(quest)
       case None => Future successful None
+    }
+  }
+
+  def findQuestDescsByGameId(gameId: Long): Future[Seq[QuestDescription]] = {
+    findQuestsByGame(gameId) flatMap { quests =>
+      Future.sequence {
+        for {
+          quest <- quests
+        } yield for {
+          itemsNeeded <- findItemsByQuest(quest.id)
+          powersNeeded <- findPowersByQuest(quest.id)
+
+          itemsHeld <- findItemsHeldByPlayers(quest.id)
+          powersHeld <- findPowersHeldByPlayers(quest.id)
+
+          master <- findMasterForQuest(quest.id)
+          players <- findPlayersByGame(gameId)
+
+          allItems <- findItemsByGame(gameId)
+          allPlayerPowers <- findPlayerPowersByGame(gameId)
+
+          itemsForQuest = getItemsNeeded(itemsNeeded, itemsHeld, allItems, players)
+          powersForQuest = getPowersNeeded(powersNeeded, powersHeld, allPlayerPowers)
+
+        } yield QuestDescription(quest, master, itemsForQuest, powersForQuest)
+      }
     }
   }
 
@@ -591,33 +659,30 @@ object PartyDAO {
     }
   }
 
-  def findQuestDescsByGameId(gameId: Long): Future[Seq[QuestDescription]] = {
-    findQuestsByGame(gameId) flatMap { quests =>
-      Future.sequence {
-        for {
-          quest <- quests
-        } yield for {
-          itemsNeeded <- findItemsByQuest(quest.id)
-          powersNeeded <- findPowersByQuest(quest.id)
-          itemsHeld <- findItemsHeldByPlayers(quest.id)
-          powersHeld <- findPowersHeldByPlayers(quest.id)
-          master <- findMasterForQuest(quest.id)
-          itemsForQuest = getItemsNeeded(itemsNeeded, itemsHeld)
-          powersForQuest = getPowersNeeded(powersNeeded, powersHeld)
-        } yield QuestDescription(quest, master, itemsForQuest, powersForQuest)
+  private def getItemsNeeded(items: Seq[Item], allyItems: Seq[Item], allItems: Seq[Item], allPlayers: Seq[Player]): Seq[ItemNeeded] = {
+    def findRumors(forItem: Item, num: Int) =
+      (allPlayers.find(i => forItem.owner.contains(i.id)),
+        shuffle(allPlayers).find(i => !forItem.owner.contains(i.id)))
+
+    items map { item =>
+      val found = allyItems.contains(item)
+      if (found)
+        new ItemNeeded(item, true, None, None)
+      else {
+        val rumors = findRumors(item, 2)
+        new ItemNeeded(item, false, rumors._1.map(_.id), rumors._2.map(_.id))
       }
     }
   }
 
-  private def getItemsNeeded(items: Seq[Item], allyItems: Seq[Item]): Seq[ItemNeeded] = {
-    items map { item =>
-      new ItemNeeded(item, allyItems.contains(item))
-    }
-  }
+  private def getPowersNeeded(powers: Seq[Power], allyPowers: Seq[PlayerPower], allPlayerPowers: Seq[PlayerPower]): Seq[PowerNeeded] = {
+    def findRumors(forPower: Power, num: Int) =
+      (allPlayerPowers.find(p => p.power == forPower.id),
+        shuffle(allPlayerPowers).find(p => p.power == forPower.id))
 
-  private def getPowersNeeded(powers: Seq[Power], allyPowers: Seq[PlayerPower]): Seq[PowerNeeded] = {
     powers map { power =>
-      new PowerNeeded(power, allyPowers.exists(_.power == power.id))
+      val rumors = findRumors(power, 2)
+      new PowerNeeded(power, allyPowers.exists(_.power == power.id), rumors._1.map(_.player), rumors._2.map(_.player))
     }
   }
 
@@ -728,6 +793,7 @@ object PartyDAO {
   private def itemsByGame(gameId: Long) = items.sortBy(_.name).filter(_.game === gameId)
 
   private def powersByGame(gameId: Long) = powers.sortBy(_.name).filter(_.game === gameId)
+  private def playerPowersByGame(gameId: Long) = playerPowers // TODO: .filter(_.game === gameId)
 
 
 }

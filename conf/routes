@@ -19,9 +19,10 @@ GET     /games/:gameId/quests/:questId/items/:id           controllers.Applicati
 GET     /games/:gameId/quests/:id                          controllers.ApplicationController.getQuest(gameId: Long, id: Long)
 POST    /games/:gameId/quests                              controllers.ApplicationController.postQuest(gameId: Long)
 PUT     /games/:gameId/quests/:id                          controllers.ApplicationController.putQuest(gameId: Long, id: Long)
-DELETE  /games/:gameId/quests/:id                          controllers.ApplicationController.deleteQuest(gameId: Long, id: Long)
+#DELETE  /games/:gameId/quests/:id                          controllers.ApplicationController.deleteQuest(gameId: Long, id: Long)
 
 GET     /games/:gameId/players/:playerId/quest             controllers.ApplicationController.getQuestForPlayer(gameId: Long, playerId: Long)
+DELETE  /games/:gameId/players/:playerId/quest             controllers.ApplicationController.completeQuest(gameId: Long, playerId: Long)
 GET     /games/:gameId/players/:playerId/sidequest         controllers.ApplicationController.getSidequestForPlayer(gameId: Long, playerId: Long)
 GET     /games/:gameId/players/:playerId/items             controllers.ApplicationController.listItemsForPlayer(gameId: Long, playerId: Long)
 GET     /games/:gameId/players                             controllers.ApplicationController.listPlayers(gameId: Long)

@@ -32,8 +32,7 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
     req.body.asText.map(Json.parse).asGame match {
       case None => BadRequest
       case Some(game) =>
-        for {
-          id <- dao.insertGame(game)
+        for {items
         } yield Created(id.toString)
     }
   }
@@ -185,6 +184,61 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
         dao.findCurrentQuestDescByPlayer(playerId, side = false) flatMap {
           case Some(quest) => Ok(quest.toJson)
           case None => NotFound
+        }
+      case _ => Unauthorized
+    }
+  }
+  
+  private def completionReward(quest: QuestDescription) = {
+     val itemsNeeded = quest.items.length
+     val powersNeeded = quest.powers.length
+     val itemsFound = quest.items.count(it => it.found)
+     val powersFound = quest.powers.count(it => it.found)
+     val missingItems = itemsNeeded - itemsFound
+     val missingPowers = powersNeeded - powersFound
+     val missingReqs = missingItems + missingPowers
+     val reqsNeeded = itemsNeeded + powersNeeded
+     val reqsFound = itemsFound + powersFound
+     val base = reqsFound * 10
+ 
+     if (reqsNeeded >= 5) {
+       if (missingReqs == 0)
+         base + 40
+       else if (missingReqs == 1)
+         base + 15
+       else if (missingReqs == 2)
+         base
+       else
+         0
+     }
+     else if (reqsNeeded == 4) {
+       if (missingReqs == 0)
+         base + 30
+       else if (missingReqs == 1)
+         base + 10
+       else
+         0
+     }
+     else {
+       if (missingReqs == 0)
+         base + 20
+       else
+         0
+     }
+   }
+
+  def completeQuest(gameId: Long, playerId: Long) = Action.async { implicit req =>
+    Some(playerId) match {//req.player match {
+      case Some(id) if playerId == id =>
+        dao.findCurrentQuestDescByPlayer(playerId, side = false) flatMap {
+          case None => NotFound
+          case Some(quest) =>
+            val reward = completionReward(quest)
+            dao.completeQuest(quest, reward) flatMap { res =>
+              dao.findQuestDescById(res.id) flatMap { case Some(newQuest) =>
+                Ok(newQuest.toJson)
+              }
+            }
         }
       case _ => Unauthorized
     }
@@ -488,7 +542,8 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
       s"""{"name":"${item.name}",
          |"description":"${jsSafe(item.description)}",
          |"id":${item.id},
-         |"found":${item.found}
+         |"found":${item.found},
+         |"rumors":[${Seq(item.rumor1, item.rumor2).filter(_.nonEmpty).map(_.get).mkString(",")}]
          |}""".stripMargin
     }
 
@@ -496,7 +551,8 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
       s"""{"name":"${power.name}",
          |"description":"${jsSafe(power.description)}",
          |"id":${power.id},
-         |"found":${power.found}
+         |"found":${power.found},
+         |"rumors":[${Seq(power.rumor1, power.rumor2).filter(_.nonEmpty).map(_.get).mkString(",")}]
          |}""".stripMargin
     }
     
