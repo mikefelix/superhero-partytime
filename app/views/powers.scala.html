@@ -1,4 +1,4 @@
-@(powers: Seq[Power], game: Game)(implicit flash: play.api.mvc.Flash, messages: Messages)
+@(powers: Seq[(Power, Int)], game: Game)(implicit flash: play.api.mvc.Flash, messages: Messages)
 
 @****************************************
 * Helper generating navigation links    *
@@ -8,18 +8,20 @@
 }
 
 @main(Some(game)) {
-    <h2>Powers</h2>
+    <h2>Powers (@powers.size)</h2>
     <h3>@flash.get("error").getOrElse("")</h3>
 
     <table>
         <tr>
             <th>Name</th>
+            <th>Possessors</th>
             <th>Description</th>
         </tr>
         @powers.map { q =>
             <tr>
-                <td style="padding: 10px"><a href="@link(q)">@q.name</a></td>
-                <td style="padding: 10px">@q.description</td>
+                <td style="padding: 10px"><a href="@link(q._1)">@q._1.name</a></td>
+                <td style="padding: 10px">@q._2</td>
+                <td style="padding: 10px">@q._1.description</td>
             </tr>
         }
         <a href="@routes.FormController.showPowerForm(game.id, 0)">New power</a>

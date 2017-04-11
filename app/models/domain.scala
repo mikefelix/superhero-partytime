@@ -47,7 +47,7 @@ case class ChatDetail(id: Long, game: Long, poster: Option[Long], posterName: St
 object ChatDetail {
   def apply(chat: Chat, posterPlayer: Option[Player]) = {
     val name = posterPlayer match {
-      case Some(player) => s"${player.alias} (${player.name})"
+      case Some(player) => player.alias//s"${player.alias} (${player.name})"
       case _ => "System"
     }
 
@@ -390,28 +390,33 @@ class QuestPowers(tag: Tag) extends Table[QuestPower](tag, "quest_powers"){
 
 case class PlayerDescription(id: Long, game: Long, name: String, alias: String, score: Int, mainQuest: Option[Quest], sideQuest: Option[Quest],
                              item1: Option[Item], item2: Option[Item], item3: Option[Item], item4: Option[Item], item5: Option[Item],
-                             power1: Option[Power], power2: Option[Power], power3: Option[Power]
+                             item6: Option[Item], item7: Option[Item], item8: Option[Item], item9: Option[Item], item10: Option[Item],
+                             power1: Option[Power], power2: Option[Power], power3: Option[Power], power4: Option[Power], power5: Option[Power]
                             ){
-  def items = Seq(item1, item2, item3, item4, item5).filter(_.nonEmpty).map(_.get)
-  def powers = Seq(power1, power2, power3).filter(_.nonEmpty).map(_.get)
+  def items = Seq(item1, item2, item3, item4, item5, item6, item7, item8, item9, item10).filter(_.nonEmpty).map(_.get)
+  def powers = Seq(power1, power2, power3, power4, power5).filter(_.nonEmpty).map(_.get)
 }
 
 object PlayerDescription {
   def applyIds(id: Long, game: Long, name: String, alias: String, score: Int, mainQuest: Option[Long], sideQuest: Option[Long],
                item1: Option[Long], item2: Option[Long], item3: Option[Long], item4: Option[Long], item5: Option[Long],
-               power1: Option[Long], power2: Option[Long], power3: Option[Long]) = {
+               item6: Option[Long], item7: Option[Long], item8: Option[Long], item9: Option[Long], item10: Option[Long],
+               power1: Option[Long], power2: Option[Long], power3: Option[Long], power4: Option[Long], power5: Option[Long]) = {
     new PlayerDescription(id, game, name, alias, score, mainQuest.map(new Quest(_)), sideQuest.map(new Quest(_)),
       item1.map(new Item(_)), item2.map(new Item(_)), item3.map(new Item(_)), item4.map(new Item(_)), item5.map(new Item(_)),
-      power1.map(new Power(_)), power2.map(new Power(_)), power3.map(new Power(_))
+      item6.map(new Item(_)), item7.map(new Item(_)), item8.map(new Item(_)), item9.map(new Item(_)), item10.map(new Item(_)),
+      power1.map(new Power(_)), power2.map(new Power(_)), power3.map(new Power(_)), power4.map(new Power(_)), power5.map(new Power(_))
     )
   }
 
   def unapplyIds(pd: PlayerDescription): Option[(Long, Long, String, String, Int, Option[Long], Option[Long],
     Option[Long], Option[Long], Option[Long], Option[Long], Option[Long],
-    Option[Long], Option[Long], Option[Long])] = {
+    Option[Long], Option[Long], Option[Long], Option[Long], Option[Long],
+    Option[Long], Option[Long], Option[Long], Option[Long], Option[Long])] = {
     Some(pd.id, pd.game, pd.name, pd.alias, pd.score, pd.mainQuest.map(_.id), pd.sideQuest.map(_.id),
       pd.item1.map(_.id), pd.item2.map(_.id), pd.item3.map(_.id), pd.item4.map(_.id), pd.item5.map(_.id),
-      pd.power1.map(_.id), pd.power2.map(_.id), pd.power3.map(_.id)
+      pd.item6.map(_.id), pd.item7.map(_.id), pd.item8.map(_.id), pd.item9.map(_.id), pd.item10.map(_.id),
+      pd.power1.map(_.id), pd.power2.map(_.id), pd.power3.map(_.id), pd.power4.map(_.id), pd.power5.map(_.id)
     )
   }
 
@@ -420,8 +425,8 @@ object PlayerDescription {
     def maybePower(i: Int) = if (powers.size > i) Some(powers(i)) else None
 
     new PlayerDescription(player.id, player.game, player.name, player.alias, player.score, mainQuest, sideQuest,
-      maybeItem(0), maybeItem(1), maybeItem(2), maybeItem(3), maybeItem(4),
-      maybePower(0), maybePower(1), maybePower(2)
+      maybeItem(0), maybeItem(1), maybeItem(2), maybeItem(3), maybeItem(4), maybeItem(5), maybeItem(6), maybeItem(7), maybeItem(8), maybeItem(9),
+      maybePower(0), maybePower(1), maybePower(2), maybePower(3), maybePower(4)
     )
   }
 }

@@ -47,9 +47,16 @@ class FormController @Inject()(implicit configuration: Configuration, val messag
       "item3" -> optional(longNumber),
       "item4" -> optional(longNumber),
       "item5" -> optional(longNumber),
+      "item6" -> optional(longNumber),
+      "item7" -> optional(longNumber),
+      "item8" -> optional(longNumber),
+      "item9" -> optional(longNumber),
+      "item10" -> optional(longNumber),
       "power1" -> optional(longNumber),
       "power2" -> optional(longNumber),
-      "power3" -> optional(longNumber)
+      "power3" -> optional(longNumber),
+      "power4" -> optional(longNumber),
+      "power5" -> optional(longNumber)
     )(PlayerDescription.applyIds)(PlayerDescription.unapplyIds)
   )
 
@@ -125,7 +132,7 @@ class FormController @Inject()(implicit configuration: Configuration, val messag
 
   def listQuests(gameId: Long) = Action.async { implicit request =>
     withGame(gameId) { game =>
-      findQuestDescsByGameId(game.id) flatMap { quests =>
+      findQuestDescsByGame(game.id) flatMap { quests =>
         Ok(views.html.quests(quests, game))
       }
     }
@@ -164,7 +171,8 @@ class FormController @Inject()(implicit configuration: Configuration, val messag
   def showPlayerForm(gameId: Long, playerId: Long) = Action.async { implicit request =>
     withGame(gameId) { game =>
       val playerById = if (playerId < 1)
-        Future(Some(PlayerDescription(playerId, game.id, "", "", 0, None, None, None, None, None, None, None, None, None, None)))
+        Future(Some(PlayerDescription(playerId, game.id, "", "", 0,
+          None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None)))
       else
         findPlayerDescById(playerId)
 
@@ -242,7 +250,7 @@ class FormController @Inject()(implicit configuration: Configuration, val messag
 
   def listPowers(gameId: Long) = Action.async { implicit request =>
     withGame(gameId) { game =>
-      dao.findPowersByGame(gameId) map { powers =>
+      dao.findPowersWithNumPlayers(gameId) map { powers =>
         Ok(views.html.powers(powers, game))
       }
     }

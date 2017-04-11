@@ -7,6 +7,7 @@ import play.api.db.DB
 import slick.dbio.{DBIO => _, _}
 import slick.driver.PostgresDriver.api._
 
+import scala.collection.mutable.ListBuffer
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import scala.util.Random.shuffle
@@ -36,19 +37,19 @@ object PartyDAO {
       playerPowers.delete,
       playerQuests.delete,
       trades.filter(_.id === game.id).delete,
+      invites.filter(_.id === game.id).delete,
       chats.filter(_.id === game.id).delete,
-      games.filter(_.id === game.id).map(_.started).update(false),
-      players.filter(_.id === game.id).delete
+//      players.filter(_.id === game.id).delete,
+      games.filter(_.id === game.id).map(_.started).update(false)
     ))
   }
 
   def initGame(game: Game) = {
-    val gameId = game.id
     val elements = for {
-      pl <- findPlayersByGame(gameId)
-      it <- findItemsByGame(gameId)
-      po <- findPowersByGame(gameId)
-      qu <- findQuestsByGame(gameId)
+      pl <- findPlayersByGame(game.id)
+      it <- findItemsByGame(game.id)
+      po <- findPowersByGame(game.id)
+      qu <- findQuestDescsByGame(game.id)
     } yield (pl, it, po, qu)
 
     elements foreach {
@@ -56,23 +57,13 @@ object PartyDAO {
         // Give 10 points
         db.run(players.filter(_.game === game.id).map(_.score).update(10))
 
-        // Give out all the items
-        distributeEvenly(items, allPlayers) { (item, player) =>
-          println(s"Giving item ${item.name} to ${player.alias}")
-          updateItem(item.copy(owner = Some(player.id)))
-        }
+        // Give each player the same number of powers, but at least 2
+        val powerAssignments = distributePowers(powers, allPlayers, giveEachPlayerAtLeast = 3, giveEachPowerAtLeast = 2)
 
-        // Give everyone powers, making sure all powers are given twice
-        distributeEvenly(powers, allPlayers, 2) { (power, player) =>
-          println(s"Giving power ${power.name} to ${player.alias}")
-          insertPlayerPower(player.id, power.id)
-        }
+        // Give out all the items, giving each player at most 6 items
+        val itemAssignments = distributeItems(items, allPlayers, maxPerPlayer = 6)
 
-        distributeEvenly(allPlayers, quests) { (player, quest) =>
-          // TODO: prevent people from getting the quest that needs the item or power they already have
-          println(s"Giving quest ${quest.name} to ${player.alias}")
-          insertPlayerQuest(player.id, quest.id, side = false)
-        }
+        giveQuests(quests, allPlayers, itemAssignments, powerAssignments)
 
       case _ => throw new IllegalStateException("Can't init game.")
     }
@@ -80,38 +71,126 @@ object PartyDAO {
     db.run(games.filter(_.id === game.id).update(game.copy(started = true)))
   }
 
-/*
-  private def giveEach[I, P](toDistribute: Seq[I], distributeAmong: Seq[P], eachGets: Int)(give: (I, P) => Unit) = {
-    val items = circularIterator(toDistribute)
-    for (i <- 1 to eachGets){
-      val receivers = shuffle(distributeAmong)
-      receivers.foreach { receiver =>
-        val item = items.next()
-        give(item, receiver)
+  private def distributePowers(powers: Seq[Power], players: Seq[Player], giveEachPlayerAtLeast: Int, giveEachPowerAtLeast: Int = 1) = {
+    val powersIt = circularRandomIterator(powers)
+    val powersToGive = powers.size * giveEachPowerAtLeast
+    val giveToEach = math.max(giveEachPlayerAtLeast,
+      (powersToGive / players.size) + (if (powersToGive % players.size == 0) 0 else 1))
+
+    println(s"Giving each player $giveToEach powers.")
+
+    val map = scala.collection.mutable.Map[Player, ListBuffer[Power]]()
+    players.foreach { player =>
+      map.put(player, new ListBuffer[Power]())
+    }
+
+    for (i <- 1 to giveToEach){
+      val mixedPlayers = shuffle(players)
+      for (j <- 1 to mixedPlayers.size) {
+        var power: Power = Power(0, 0, "", "")
+        var player: Option[Player] = None
+
+        do {
+          power = powersIt.next()
+          player = mixedPlayers.find(p => map(p).size < i && !map(p).contains(power))
+        /*
+            .getOrElse(throw new IllegalStateException(
+              s"""
+                 |Could not find a player for power ${power.id}. $i of $giveToEach, $j of ${players.size}, ${powers.size} powers:
+                 |${map.map(e => e._1.id + " -> " + e._2.map(_.id)).mkString("\n")}
+               """.stripMargin))
+*/
+        } while (player.isEmpty)
+
+        map(player.get) += power
       }
     }
-  }
-*/
 
-  private def distributeEvenly[I, P](toDistribute: Seq[I], distributeAmong: Seq[P], copies: Int = 1)(give: (I, P) => Unit) = {
+    map.foreach { case (player, powersGiven) =>
+      powersGiven.foreach { power =>
+        println(s"Giving power ${power.name} to ${player.alias}")
+        insertPlayerPower(player.id, power.id)
+      }
+    }
+
+    map.toMap
+  }
+
+  private def distributeItems(items: Seq[Item], players: Seq[Player], maxPerPlayer: Int) = {
+    // TODO: what if there are more players than items?
+    val mixedItems = shuffle(items)
+    val playersIt = circularRandomIterator(players)
+    val itemsIt = items.iterator
+    val maxGives = math.min(maxPerPlayer * players.size, items.size)
+
+    val map = scala.collection.mutable.Map[Player, ListBuffer[Item]]()
+    players.foreach { player =>
+      map.put(player, new ListBuffer[Item]())
+    }
+
+    var max = 0
+    for (i <- 1 to maxGives){
+      val item = itemsIt.next()
+      val player = playersIt.next()
+      println(s"Giving item ${item.name} to ${player.alias}")
+      map(player) += item
+      max = if (max < map(player).size) map(player).size else max
+      updateItem(item.copy(owner = Some(player.id)))
+    }
+
+    println(s"Gave players up to $max items.")
+    map.toMap
+  }
+
+  /*
+  private def distribute[I, P](toDistribute: Seq[I], distributeAmong: Seq[P])(give: (I, P) => Unit) = {
     val receivers = circularIterator(shuffle(distributeAmong))
     shuffle(toDistribute).foreach { item =>
-      for (i <- 1 to copies){
-        val receiver = receivers.next()
-        give(item, receiver)
-      }
+      val receiver = receivers.next()
+      give(item, receiver)
     }
   }
+  */
 
-  private def circularIterator[X](iterable: Iterable[X]): Iterator[X] = {
-    var it = iterable.iterator
+  private def giveQuests(quests: Seq[QuestDescription], players: Seq[Player],
+                         itemAssignments: Map[Player, Seq[Item]], powerAssignments: Map[Player, Seq[Power]]) = {
+    val mixedQuests = shuffle(quests)
+    val given = new ListBuffer[QuestDescription]
+
+    players.foreach { player =>
+      val playerItems = itemAssignments(player).map(_.id)
+      val playerPowers = powerAssignments(player).map(_.id)
+
+      val quest = mixedQuests.find { q =>
+        !given.contains(q) &&
+          !q.items.exists(item => playerItems.contains(item.id)) &&
+          !q.powers.exists(power => playerPowers.contains(power.id))
+      } match {
+        case Some(q) => q
+        case None =>
+          println(s"Failed to give a preferred quest to player $player.id")
+          mixedQuests.head
+      }
+
+      println(s"Giving quest ${quest.name} to ${player.alias}")
+      insertPlayerQuest(player.id, quest.id, side = false)
+      given += quest
+    }
+
+    given
+  }
+
+  private def circularRandomIterator[X](list: Seq[X]): Iterator[X] = {
+    var it = shuffle(list).iterator
+
     new Iterator[X] {
-      override def hasNext = iterable.nonEmpty
+      override def hasNext = seq.nonEmpty
 
-      override def next() = if (it.hasNext)
+      override def next() = if (it.hasNext) {
         it.next
+      }
       else {
-        it = iterable.iterator
+        it = shuffle(list).iterator
         it.next
       }
 
@@ -184,7 +263,8 @@ object PartyDAO {
         playerOpt map { player =>
           PlayerDescription(player.id, player.game, player.name, player.alias, player.score, mainQuestForPlayer, sideQuestForPlayer,
             itemsForPlayer.option(0), itemsForPlayer.option(1), itemsForPlayer.option(2), itemsForPlayer.option(3), itemsForPlayer.option(4),
-            powersForPlayer.option(0), powersForPlayer.option(1), powersForPlayer.option(2))
+            itemsForPlayer.option(5), itemsForPlayer.option(6), itemsForPlayer.option(7), itemsForPlayer.option(8), itemsForPlayer.option(9),
+            powersForPlayer.option(0), powersForPlayer.option(1), powersForPlayer.option(2), powersForPlayer.option(3), powersForPlayer.option(4))
         }
     }
   }
@@ -335,11 +415,13 @@ object PartyDAO {
     val removePowers = playerPowers.filter(_.player === playerDesc.id).delete
 
     // Add back items and powers
-    val addItems = List(playerDesc.item1, playerDesc.item2, playerDesc.item3, playerDesc.item4, playerDesc.item5).filter(_.nonEmpty).map { item =>
+    val addItems = List(playerDesc.item1, playerDesc.item2, playerDesc.item3, playerDesc.item4, playerDesc.item5,
+        playerDesc.item6, playerDesc.item7, playerDesc.item8, playerDesc.item9, playerDesc.item10).filter(_.nonEmpty).map { item =>
       items.filter(_.id === item.get.id).map(_.owner).update(Some(playerDesc.id))
     }
 
-    val addPowers = List(playerDesc.power1, playerDesc.power2, playerDesc.power3).filter(_.nonEmpty).map { power =>
+    val addPowers = List(playerDesc.power1, playerDesc.power2, playerDesc.power3,
+        playerDesc.power4, playerDesc.power5).filter(_.nonEmpty).map { power =>
       playerPowers += PlayerPower(playerDesc.id, power.get.id)
     }
 
@@ -409,6 +491,16 @@ object PartyDAO {
   def findPowersByGame(gameId: Long): Future[Seq[Power]] = db.run(powersByGame(gameId).result)
   def findPlayerPowersByGame(gameId: Long): Future[Seq[PlayerPower]] = db.run(playerPowersByGame(gameId).result)
   def findPowersHeldByPlayers(questId: Long): Future[Seq[PlayerPower]] = db.run(powersHeldByPlayers(questId).result)
+
+  def findPowersWithNumPlayers(gameId: Long): Future[Seq[(Power, Int)]] = {
+    val query = (powers joinLeft playerPowers on (_.id === _.power))
+      .groupBy(_._1)
+      .map { case (pow, p) =>
+        pow -> p.map(_._2).length
+      }
+
+    db.run(query.result)
+  }
 
   def findPlayerPowersByPlayer(playerId: Long): Future[Seq[PlayerPower]] = db.run(playerPowersByPlayer(playerId).result)
   def findPlayerPowersByPower(powerId: Long): Future[Seq[PlayerPower]] = db.run(playerPowersByPower(powerId).result)
@@ -526,7 +618,7 @@ object PartyDAO {
     }
   }
 
-  def findQuestDescsByGameId(gameId: Long): Future[Seq[QuestDescription]] = {
+  def findQuestDescsByGame(gameId: Long): Future[Seq[QuestDescription]] = {
     findQuestsByGame(gameId) flatMap { quests =>
       Future.sequence {
         for {

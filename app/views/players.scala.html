@@ -8,7 +8,7 @@
 }
 
 @main(Some(game)) {
-    <h2>Players</h2>
+    <h2>Players (@players.size)</h2>
 
     <h3>@flash.get("error").getOrElse("")</h3>
     <a href="@routes.FormController.showPlayerForm(game.id, 0)">New player</a>
