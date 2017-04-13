@@ -262,6 +262,7 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
           case None => NotFound
           case Some(quest) =>
             dao.leaveSidequest(playerId, quest.id) flatMap { res =>
+              dao.addAlert(gameId, quest.master.get, s"Ally abandoned quest {$playerId}")
               NoContent
             }
         }
