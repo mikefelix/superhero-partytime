@@ -433,8 +433,9 @@ object PlayerDescription {
 
 case class QuestDescription(id: Long, name: String, description: String, game: Long, master: Option[Long],
                             item1: Option[ItemNeeded], item2: Option[ItemNeeded], item3: Option[ItemNeeded],
-                            power1: Option[PowerNeeded], power2: Option[PowerNeeded], power3: Option[PowerNeeded]){
-  def this(id: Long, name: String, description: String, game: Long, master: Option[Long]) = this(id, name, description, game, master, None, None, None, None, None, None)
+                            power1: Option[PowerNeeded], power2: Option[PowerNeeded], power3: Option[PowerNeeded],
+                            allies: Seq[Player]){
+  def this(id: Long, name: String, description: String, game: Long, master: Option[Long]) = this(id, name, description, game, master, None, None, None, None, None, None, Nil)
   def items = Seq(item1, item2, item3).filter(_.nonEmpty).map(_.get)
   def powers = Seq(power1, power2, power3).filter(_.nonEmpty).map(_.get)
   def quest = Quest(id, name, description, game)
@@ -446,7 +447,7 @@ object QuestDescription {
                               power1: Option[Long], power2: Option[Long], power3: Option[Long]) = {
     new QuestDescription(id, name, description, game, master,
       item1.map(new ItemNeeded(_)), item2.map(new ItemNeeded(_)), item3.map(new ItemNeeded(_)),
-      power1.map(new PowerNeeded(_)), power2.map(new PowerNeeded(_)), power3.map(new PowerNeeded(_)))
+      power1.map(new PowerNeeded(_)), power2.map(new PowerNeeded(_)), power3.map(new PowerNeeded(_)), Nil)
   }
 
   def unapplyIds(qd: QuestDescription): Option[(Long, String, String, Long, Option[Long], Option[Long], Option[Long], Option[Long], Option[Long], Option[Long], Option[Long])] = {
@@ -455,12 +456,12 @@ object QuestDescription {
       qd.power1.map(_.id), qd.power2.map(_.id), qd.power3.map(_.id))
   }
 
-  def apply(quest: Quest, master: Option[Player], items: Seq[ItemNeeded], powers: Seq[PowerNeeded]) = {
+  def apply(quest: Quest, master: Option[Player], items: Seq[ItemNeeded], powers: Seq[PowerNeeded], allies: Seq[Player]) = {
     def maybeItem(i: Int) = if (items.size > i) Some(items(i)) else None
     def maybePower(i: Int) = if (powers.size > i) Some(powers(i)) else None
 
     new QuestDescription(quest.id, quest.name, quest.description, quest.game, master.map(_.id),
       maybeItem(0), maybeItem(1), maybeItem(2),
-      maybePower(0), maybePower(1), maybePower(2))
+      maybePower(0), maybePower(1), maybePower(2), allies)
   }
 }

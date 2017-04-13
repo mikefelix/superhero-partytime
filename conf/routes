@@ -24,6 +24,7 @@ PUT     /games/:gameId/quests/:id                          controllers.Applicati
 GET     /games/:gameId/players/:playerId/quest             controllers.ApplicationController.getQuestForPlayer(gameId: Long, playerId: Long)
 DELETE  /games/:gameId/players/:playerId/quest             controllers.ApplicationController.completeQuest(gameId: Long, playerId: Long)
 GET     /games/:gameId/players/:playerId/sidequest         controllers.ApplicationController.getSidequestForPlayer(gameId: Long, playerId: Long)
+DELETE  /games/:gameId/players/:playerId/sidequest         controllers.ApplicationController.leaveSidequest(gameId: Long, playerId: Long)
 GET     /games/:gameId/players/:playerId/items             controllers.ApplicationController.listItemsForPlayer(gameId: Long, playerId: Long)
 GET     /games/:gameId/players                             controllers.ApplicationController.listPlayers(gameId: Long)
 GET     /games/:gameId/players/:id                         controllers.ApplicationController.getPlayer(gameId: Long, id: Long)

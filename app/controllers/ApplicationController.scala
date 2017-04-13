@@ -5,11 +5,12 @@ import javax.inject.Inject
 import models.PartyDAO._
 import models.{PartyDAO => dao, _}
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import play.api.libs.json.{JsValue, Json}
 import play.api.libs.json.Json.{toJsFieldJsValueWrapper => js}
+import play.api.libs.json.{JsValue, Json}
 import play.api.mvc._
 import services.Auth
 import services.Util.jsSafe
+
 import scala.concurrent.Future
 
 class ApplicationController @Inject()(auth: Auth) extends Controller {
@@ -18,7 +19,7 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
   implicit def optionize[A](a: A): Option[A] = Some(a)
 
   private val sillyExtraOffers = List("A drink", "A kiss", "A promise")
-  private val pointsOffers = List(1, 5, 10).map(p => s"+$p" -> s"$p point${if (p != 1) "s" else ""}")
+  private val pointsOffers = List(1, 5, 10, 20, 30).map(p => s"+$p" -> s"$p point${if (p != 1) "s" else ""}")
 
   private def withGame(gameId: Long)(block: Game => Future[Result])(implicit request: Request[_]) = {
     findStartedGameById(gameId) flatMap {
@@ -189,43 +190,52 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
     }
   }
   
-  private def completionReward(quest: QuestDescription) = {
-     val itemsNeeded = quest.items.length
-     val powersNeeded = quest.powers.length
-     val itemsFound = quest.items.count(it => it.found)
-     val powersFound = quest.powers.count(it => it.found)
-     val missingItems = itemsNeeded - itemsFound
-     val missingPowers = powersNeeded - powersFound
-     val missingReqs = missingItems + missingPowers
-     val reqsNeeded = itemsNeeded + powersNeeded
-     val reqsFound = itemsFound + powersFound
-     val base = reqsFound * 10
- 
-     if (reqsNeeded >= 5) {
-       if (missingReqs == 0)
-         base + 40
-       else if (missingReqs == 1)
-         base + 15
-       else if (missingReqs == 2)
-         base
-       else
-         0
-     }
-     else if (reqsNeeded == 4) {
-       if (missingReqs == 0)
-         base + 30
-       else if (missingReqs == 1)
-         base + 10
-       else
-         0
-     }
-     else {
-       if (missingReqs == 0)
-         base + 20
-       else
-         0
-     }
-   }
+  private def completionReward(quest: QuestDescription, side: Boolean = false) = {
+    val itemsNeeded = quest.items.length
+    val powersNeeded = quest.powers.length
+    val itemsFound = quest.items.count(it => it.found)
+    val powersFound = quest.powers.count(it => it.found)
+    val missingItems = itemsNeeded - itemsFound
+    val missingPowers = powersNeeded - powersFound
+    val missingReqs = missingItems + missingPowers
+    val reqsNeeded = itemsNeeded + powersNeeded
+    val reqsFound = itemsFound + powersFound
+
+    if (reqsFound == 0)
+      -5
+    else {
+      val base = reqsFound * 10
+
+      if (side)
+        base
+      else {
+        if (reqsNeeded >= 5) {
+          if (missingReqs == 0)
+            base + 40
+          else if (missingReqs == 1)
+            base + 15
+          else if (missingReqs == 2)
+            base
+          else
+            0
+        }
+        else if (reqsNeeded == 4) {
+          if (missingReqs == 0)
+            base + 30
+          else if (missingReqs == 1)
+            base + 10
+          else
+            0
+        }
+        else {
+          if (missingReqs == 0)
+            base + 20
+          else
+            0
+        }
+      }
+    }
+  }
 
   def completeQuest(gameId: Long, playerId: Long) = Action.async { implicit req =>
     Some(playerId) match {//req.player match {
@@ -234,8 +244,9 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
           case None => NotFound
           case Some(quest) =>
             val reward = completionReward(quest)
-            dao.completeQuest(quest, reward) flatMap { res =>
-              dao.findQuestDescById(res.id) flatMap { case Some(newQuest) =>
+            val sidereward = completionReward(quest, side = true)
+            dao.completeQuest(quest, reward, sidereward) flatMap { res =>
+              dao.findQuestDescById(res) flatMap { case Some(newQuest) =>
                 Ok(newQuest.toJson)
               }
             }
@@ -244,7 +255,21 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
     }
   }
 
-  val NoQuest = QuestDescription(0, "None", "", 0, None, None, None, None, None, None, None)
+  def leaveSidequest(gameId: Long, playerId: Long) = Action.async { implicit req =>
+    Some(playerId) match {//req.player match {
+      case Some(id) if playerId == id =>
+        dao.findCurrentQuestDescByPlayer(playerId, side = true) flatMap {
+          case None => NotFound
+          case Some(quest) =>
+            dao.leaveSidequest(playerId, quest.id) flatMap { res =>
+              NoContent
+            }
+        }
+      case _ => Unauthorized
+    }
+  }
+
+  val NoQuest = QuestDescription(0, "None", "", 0, None, None, None, None, None, None, None, Nil)
 
   def getSidequestForPlayer(gameId: Long, playerId: Long) = Action.async { implicit req =>
     Some(playerId) match {//req.player match {
@@ -560,6 +585,7 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
         |"name":"${jsSafe(quest.name)}",
         |"master":${quest.master.getOrElse("null")},
         |"description":"${jsSafe(quest.description)}",
+        |"allies":[${quest.allies.map(_.id).mkString(",")}],
         |"items":[${items.mkString(",")}],
         |"powers":[${powers.mkString(",")}]
         |}""".stripMargin

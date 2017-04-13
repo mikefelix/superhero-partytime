@@ -155,21 +155,31 @@ object PartyDAO {
   private def giveQuests(quests: Seq[QuestDescription], players: Seq[Player],
                          itemAssignments: Map[Player, Seq[Item]], powerAssignments: Map[Player, Seq[Power]]) = {
     val mixedQuests = shuffle(quests)
-    val given = new ListBuffer[QuestDescription]
+    val given = new ListBuffer[QuestDescription]()
+
+    val ericasQuest = quests.find(_.name.toLowerCase().contains("ice penis")).getOrElse(quests.head)
 
     players.foreach { player =>
       val playerItems = itemAssignments(player).map(_.id)
       val playerPowers = powerAssignments(player).map(_.id)
 
-      val quest = mixedQuests.find { q =>
-        !given.contains(q) &&
+      val quest = if (player.name.toLowerCase().startsWith("erica")){
+        // Erica's special quest
+        ericasQuest
+      }
+      else {
+        // Quests for non-Erica people
+        mixedQuests.find { q =>
+          q != ericasQuest &&
+          !given.contains(q) &&
           !q.items.exists(item => playerItems.contains(item.id)) &&
           !q.powers.exists(power => playerPowers.contains(power.id))
-      } match {
-        case Some(q) => q
-        case None =>
-          println(s"Failed to give a preferred quest to player $player.id")
-          mixedQuests.head
+        } match {
+          case Some(q) => q
+          case None =>
+            println(s"Failed to give a preferred quest to player $player.id")
+            mixedQuests.head
+        }
       }
 
       println(s"Giving quest ${quest.name} to ${player.alias}")
@@ -200,6 +210,16 @@ object PartyDAO {
   def allQuests: Future[Seq[Quest]] = db.run(quests.result)
   def findQuestById(id: Long): Future[Option[Quest]] = db.run(questById(id).result.headOption)
   def findQuestsByGame(gameId: Long): Future[Seq[Quest]] = db.run(questsByGame(gameId).result)
+
+  def findUnclaimedQuestIdsByGame(gameId: Long): Future[Seq[(Int)]] = {
+    db.run(sql"""select q.id, count(pq.player)
+          from quests q
+          left join player_quests pq on (pq.quest = q.id)
+          group by q.id
+          having count(pq.player) = 0
+      """.as[(Int, Int)]) map { f => f map { t => t._1 } }
+  }
+
 //  def findQuestsByPlayer(playerId: Long): Future[Seq[Quest]] = db.run(questsByPlayer(playerId).result)
   def insertQuest(quest: Quest): Future[Quest] = db.run(questInsert += quest)
   def insertQuest(questDesc: QuestDescription): Future[Long] = {
@@ -483,7 +503,7 @@ object PartyDAO {
   def findQuestByPlayer(playerId: Long, side: Boolean): Future[Option[Quest]] = db.run(currentQuestsByPlayer(playerId, side).result.headOption)
   def findPlayersByQuest(questId: Long): Future[Seq[Player]] = db.run(playersByQuest(questId).result)
   def findMasterForQuest(questId: Long): Future[Option[Player]] = db.run(playersByQuest(questId, main = Some(true)).result.headOption)
-  def findAllyForQuest(questId: Long): Future[Option[Player]] = db.run(playersByQuest(questId, main = Some(false)).result.headOption)
+  def findAlliesForQuest(questId: Long): Future[Seq[Player]] = db.run(playersByQuest(questId, main = Some(false)).result)
 
   def findPowerById(id: Long): Future[Option[Power]] = db.run(powerById(id).result.headOption)
   def findPowersByPlayer(playerId: Long): Future[Seq[Power]] = db.run(powersByPlayer(playerId).result)
@@ -550,22 +570,38 @@ object PartyDAO {
     db.run(players.filter(_.id === player.id).map(_.score).update(player.score + points))
   }
 
-  def completeQuest(quest: QuestDescription, reward: Int): Future[Quest] = {
-    for {
-      Some(player) <- findPlayerById(quest.master.get)
-      added <- addPoints(player, reward)
-      newQuest <- assignRandomQuest(player, quest.id)
-    } yield newQuest
+  def leaveSidequest(playerId: Long, questId: Long) = {
+    db.run(playerQuests.filter(pq => pq.player === playerId && pq.quest === questId && pq.side === true).delete)
   }
 
-  private def assignRandomQuest(player: Player, except: Long): Future[Quest] = {
-    findQuestsByGame(player.game) map { quests =>
-      val random = shuffle(quests)
-      val quest = if (random.head.id == except)
+  def completeQuest(quest: QuestDescription, reward: Int, sidereward: Int): Future[Long] = {
+    findPlayersByQuest(quest.id) flatMap { allies =>
+      val newId = allies map { ally =>
+        if (quest.master.contains(ally.id)) {
+          addPoints(ally, reward)
+          addAlert(quest.game, ally.id, s"Quest completed {${quest.id}/$reward}")
+          assignRandomQuest(ally, except = quest.id)
+        }
+        else {
+          addPoints(ally, sidereward)
+          addAlert(quest.game, ally.id, s"Sidequest completed {${quest.id}/$sidereward}")
+          Future successful 0L
+        }
+      }
+
+      db.run(playerQuests.filter(_.quest === quest.id).delete)
+      Future.sequence(newId) map (_.sum)
+    }
+  }
+
+  private def assignRandomQuest(player: Player, except: Long): Future[Long] = {
+    findUnclaimedQuestIdsByGame(player.game) map { ids =>
+      val random = shuffle(ids)
+      val quest = if (random.head == except)
         random.tail.head
       else random.head
 
-      playerQuests += PlayerQuest(player.id, quest.id, side = false, completed = false)
+      playerQuests += PlayerQuest(player.id, quest, side = false, completed = false)
       quest
     }
   }
@@ -588,7 +624,9 @@ object PartyDAO {
           itemsForQuest = getItemsNeeded(itemsNeeded, itemsHeld, allItems, players)
           powersForQuest = getPowersNeeded(powersNeeded, powersHeld, allPlayerPowers)
 
-        } yield Some(QuestDescription(quest, master, itemsForQuest, powersForQuest))
+          allies <- findAlliesForQuest(id)
+
+        } yield Some(QuestDescription(quest, master, itemsForQuest, powersForQuest, allies))
 
       case None => Future(None)
     }
@@ -610,7 +648,9 @@ object PartyDAO {
       itemsForQuest = getItemsNeeded(itemsNeeded, itemsHeld, allItems, players)
       powersForQuest = getPowersNeeded(powersNeeded, powersHeld, allPlayerPowers)
 
-    } yield Some(QuestDescription(quest, master, itemsForQuest, powersForQuest)): Option[QuestDescription]
+      allies <- findAlliesForQuest(id)
+
+    } yield Some(QuestDescription(quest, master, itemsForQuest, powersForQuest, allies)): Option[QuestDescription]
 
     findQuestByPlayer(id, side) flatMap {
       case Some(quest) => describeQuest(quest)
@@ -639,7 +679,9 @@ object PartyDAO {
           itemsForQuest = getItemsNeeded(itemsNeeded, itemsHeld, allItems, players)
           powersForQuest = getPowersNeeded(powersNeeded, powersHeld, allPlayerPowers)
 
-        } yield QuestDescription(quest, master, itemsForQuest, powersForQuest)
+          allies <- findAlliesForQuest(quest.id)
+
+        } yield QuestDescription(quest, master, itemsForQuest, powersForQuest, allies)
       }
     }
   }
@@ -713,7 +755,7 @@ object PartyDAO {
   }
 
   def assignPowers(player: Player, number: Int): Unit = {
-    def giveRandomPower(list: Seq[(Int, Int)]) = {
+    def giveRandomPower(list: Seq[(Long, Long)]) = {
       val rand = (math.random * list.size).toInt
       val (id, _) = list(rand)
       println(s"Giving player ${player.id} power $id")
@@ -725,7 +767,7 @@ object PartyDAO {
           left join player_powers on (player_powers.power = powers.id)
           group by powers.id
           having count(player_powers.player) = 0
-      """.as[(Int, Int)]
+      """.as[(Long, Long)]
 
     val powersUnownedByPlayer = sql"""select powers.id, count(player_powers.player)
         from powers
@@ -733,7 +775,7 @@ object PartyDAO {
         where player_powers.player = ${player.id}
         group by powers.id
         having count(player_powers.player) = 0
-      """.as[(Int, Int)]
+      """.as[(Long, Long)]
 
     for (i <- 1 to number){
       db.run(powersUnownedByAnyone) map { list =>
@@ -773,8 +815,11 @@ object PartyDAO {
         shuffle(allPlayerPowers).find(p => p.power == forPower.id))
 
     powers map { power =>
+      val found = allyPowers.exists(_.power == power.id)
+      if (found)
+        new PowerNeeded(power, true, None, None)
       val rumors = findRumors(power, 2)
-      new PowerNeeded(power, allyPowers.exists(_.power == power.id), rumors._1.map(_.player), rumors._2.map(_.player))
+      new PowerNeeded(power, false, rumors._1.map(_.player), rumors._2.map(_.player))
     }
   }
 
