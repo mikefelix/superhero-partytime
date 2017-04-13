@@ -344,7 +344,8 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
       case Some(postedPlayer) =>
         dao.findGameById(gameId) flatMap { case Some(game) =>
           try {
-            dao.insertPlayer(postedPlayer) flatMap { player =>
+            val trimmedPlayer = postedPlayer.copy(name = postedPlayer.name.trim, alias = postedPlayer.alias.trim())
+            dao.insertPlayer(trimmedPlayer) flatMap { player =>
               if (game.started) {
                 println(s"Game is started. Giving powers and items to new player.")
                 dao.assignItems(player, 2)

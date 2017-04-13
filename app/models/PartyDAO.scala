@@ -269,7 +269,7 @@ object PartyDAO {
   def deleteQuest(id: Long): Future[Int] = db.run(questById(id).delete)
 
   def findPlayerById(id: Long): Future[Option[Player]] = db.run(playerById(id).result.headOption)
-  def findPlayersByGame(gameId: Long): Future[Seq[Player]] = db.run(players.filter(_.game === gameId).result)
+  def findPlayersByGame(gameId: Long): Future[Seq[Player]] = db.run(players.sortBy(_.alias).filter(_.game === gameId).result)
 
   def findPlayerDescById(id: Long): Future[Option[PlayerDescription]] = {
     (for {
