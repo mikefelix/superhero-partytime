@@ -794,32 +794,51 @@ object PartyDAO {
   }
 
   private def getItemsNeeded(items: Seq[Item], allyItems: Seq[Item], allItems: Seq[Item], allPlayers: Seq[Player]): Seq[ItemNeeded] = {
-    def findRumors(forItem: Item, num: Int) =
-      (allPlayers.find(i => forItem.owner.contains(i.id)),
-        shuffle(allPlayers).find(i => !forItem.owner.contains(i.id)))
+    def findRumors(forItem: Item, num: Int): (Player, Player) = {
+      val possessor = allPlayers.find(i => forItem.owner.contains(i.id)).get
+      var fake: Player = null
+      do {
+        fake = allPlayers((allPlayers.size * math.random).toInt)
+      } while (fake == possessor)
+
+      if (math.random < 0.5)
+        (possessor, fake)
+      else
+        (fake, possessor)
+    }
 
     items map { item =>
-      val found = allyItems.contains(item)
-      if (found)
+      if (allyItems.contains(item))
         new ItemNeeded(item, true, None, None)
       else {
         val rumors = findRumors(item, 2)
-        new ItemNeeded(item, false, rumors._1.map(_.id), rumors._2.map(_.id))
+        new ItemNeeded(item, false, Some(rumors._1.id), Some(rumors._2.id))
       }
     }
   }
 
   private def getPowersNeeded(powers: Seq[Power], allyPowers: Seq[PlayerPower], allPlayerPowers: Seq[PlayerPower]): Seq[PowerNeeded] = {
-    def findRumors(forPower: Power, num: Int) =
-      (allPlayerPowers.find(p => p.power == forPower.id),
-        shuffle(allPlayerPowers).find(p => p.power == forPower.id))
+    def findRumors(forPower: Power, num: Int) = {
+      val possessor = allPlayerPowers.find(p => p.power == forPower.id).get
+      var fake: PlayerPower = null
+
+       do {
+         fake = allPlayerPowers((allPlayerPowers.size * math.random).toInt)
+       } while (fake == possessor)
+
+      if (math.random < 0.5)
+        (possessor, fake)
+      else
+        (fake, possessor)
+    }
 
     powers map { power =>
-      val found = allyPowers.exists(_.power == power.id)
-      if (found)
+      if (allyPowers.exists(_.power == power.id))
         new PowerNeeded(power, true, None, None)
-      val rumors = findRumors(power, 2)
-      new PowerNeeded(power, false, rumors._1.map(_.player), rumors._2.map(_.player))
+      else {
+        val rumors = findRumors(power, 2)
+        new PowerNeeded(power, false, Some(rumors._1.player), Some(rumors._2.player))
+      }
     }
   }
 
