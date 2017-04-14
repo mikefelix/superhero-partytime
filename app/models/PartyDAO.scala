@@ -648,7 +648,7 @@ object PartyDAO {
       itemsForQuest = getItemsNeeded(itemsNeeded, itemsHeld, allItems, players)
       powersForQuest = getPowersNeeded(powersNeeded, powersHeld, allPlayerPowers)
 
-      allies <- findAlliesForQuest(id)
+      allies <- findAlliesForQuest(quest.id)
 
     } yield Some(QuestDescription(quest, master, itemsForQuest, powersForQuest, allies)): Option[QuestDescription]
 

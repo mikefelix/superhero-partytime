@@ -111,7 +111,7 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
 
   def getLatestChats(gameId: Long) = Action.async { implicit req =>
     dao.findLatestChats(gameId, 100) map { chats =>
-      Ok(chats.toJson)
+      Ok(chats.sortBy(_.id).toJson)
     }
   }
 
@@ -183,7 +183,8 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
     Some(playerId) match {//req.player match {
       case Some(id) if playerId == id =>
         dao.findCurrentQuestDescByPlayer(playerId, side = false) flatMap {
-          case Some(quest) => Ok(quest.toJson)
+          case Some(quest) =>
+            Ok(quest.toJson)
           case None => NotFound
         }
       case _ => Unauthorized
