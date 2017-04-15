@@ -25,6 +25,11 @@
 
     @helper.form(routes.FormController.reset(id)) {
         <p><button type="submit">RESET GAME!</button></p>
+        <p>Warning: this will delete all quest assignments, item assignments and power assignments. Will not delete quests, items or powers. Will not delete players.</p>
+    }
+
+    @helper.form(routes.FormController.fullReset(id)) {
+        <p><button type="submit">FULL RESET GAME!</button></p>
         <p>Warning: this will delete all players, quest assignments, item assignments and power assignments. Will not delete quests, items or powers.</p>
     }
 

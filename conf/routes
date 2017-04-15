@@ -53,6 +53,7 @@ GET     /form/games/:gameId                                controllers.FormContr
 POST    /form/games/:gameId                                controllers.FormController.updateGame(gameId: Long)
 POST    /form/games/:gameId/init                           controllers.FormController.init(gameId: Long)
 POST    /form/games/:gameId/reset                          controllers.FormController.reset(gameId: Long)
+POST    /form/games/:gameId/resetfull                      controllers.FormController.fullReset(gameId: Long)
 
 GET     /form/games/:gameId/quests                         controllers.FormController.listQuests(gameId: Long)
 GET     /form/games/:gameId/quests/:questId                controllers.FormController.showQuestForm(gameId: Long, questId: Long)

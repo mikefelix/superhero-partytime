@@ -29,19 +29,29 @@ object PartyDAO {
   val questPowers = TableQuery[QuestPowers]
   val playerPowers = TableQuery[PlayerPowers]
 
-  def resetGame(game: Game) = {
+  def resetGame(game: Game, withPlayers: Boolean = false) = {
     // TODO: restrict everything to this game.
 
-    db.run(DBIO.seq(
-      items.map(_.owner).update(None),
-      playerPowers.delete,
-      playerQuests.delete,
-      trades.filter(_.id === game.id).delete,
-      invites.filter(_.id === game.id).delete,
-      chats.filter(_.id === game.id).delete,
-//      players.filter(_.id === game.id).delete,
-      games.filter(_.id === game.id).map(_.started).update(false)
-    ))
+    println(s"Delete items.")
+    db.run(items.map(_.owner).update(None)).recover { case ex: Throwable => ex.printStackTrace()}
+    println(s"Delete player powers.")
+    db.run(playerPowers.delete).recover { case ex: Throwable => ex.printStackTrace()}
+    println(s"Delete player quests.")
+    db.run(playerQuests.delete).recover { case ex: Throwable => ex.printStackTrace()}
+    println(s"Delete trades.")
+    db.run(trades.delete).recover { case ex: Throwable => ex.printStackTrace()}
+    println(s"Delete invites.")
+    db.run(invites.delete).recover { case ex: Throwable => ex.printStackTrace()}
+    println(s"Delete chats.")
+    db.run(chats.delete).recover { case ex: Throwable => ex.printStackTrace()}
+
+    if (withPlayers) {
+      println(s"Delete players.")
+      db.run(players.delete).recover { case ex: Throwable => ex.printStackTrace() }
+    }
+
+    println(s"Mark game not started.")
+    db.run(games.map(_.started).update(false)).recover { case ex: Throwable => ex.printStackTrace()}
   }
 
   def initGame(game: Game) = {

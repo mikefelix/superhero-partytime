@@ -113,6 +113,13 @@ class FormController @Inject()(implicit configuration: Configuration, val messag
     }
   }
 
+  def fullReset(gameId: Long) = Action.async { implicit req =>
+    withGame(gameId) { game =>
+      resetGame(game, withPlayers = true)
+      Redirect(routes.FormController.showGameForm(gameId)).flashing("message" -> "Game was reset.")
+    }
+  }
+
   def login = Action {
     Ok(views.html.login(loginForm))
   }
