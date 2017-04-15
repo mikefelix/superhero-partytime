@@ -576,6 +576,8 @@ object PartyDAO {
 
   def completeQuest(quest: QuestDescription, reward: Int, sidereward: Int): Future[Long] = {
     findPlayersByQuest(quest.id) flatMap { allies =>
+      db.run(playerQuests.filter(_.quest === quest.id).delete)
+
       val newId = allies map { ally =>
         if (quest.master.contains(ally.id)) {
           addPoints(ally, reward)
@@ -589,7 +591,6 @@ object PartyDAO {
         }
       }
 
-      db.run(playerQuests.filter(_.quest === quest.id).delete)
       Future.sequence(newId) map (_.sum)
     }
   }
