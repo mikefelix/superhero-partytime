@@ -46,9 +46,9 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
     }
   }
 
-  def deleteQuest(gameId: Long, id: Long) = Action.async { implicit req =>
-    dao.deleteQuest(id).map { res => if (res > 0) NoContent else Gone }
-  }
+//  def deleteQuest(gameId: Long, id: Long) = Action.async { implicit req =>
+//    dao.deleteQuest(id).map { res => if (res > 0) NoContent else Gone }
+//  }
 
   def putQuest(gameId: Long, id: Long) = Action.async { implicit req =>
     req.body.asText.map(Json.parse) match {
@@ -183,9 +183,8 @@ class ApplicationController @Inject()(auth: Auth) extends Controller {
     Some(playerId) match {//req.player match {
       case Some(id) if playerId == id =>
         dao.findCurrentQuestDescByPlayer(playerId, side = false) flatMap {
-          case Some(quest) =>
-            Ok(quest.toJson)
-          case None => NotFound
+          case Some(quest) => Ok(quest.toJson)
+          case None => Ok(NoQuest.toJson)
         }
       case _ => Unauthorized
     }

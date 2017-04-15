@@ -601,7 +601,7 @@ object PartyDAO {
         random.tail.head
       else random.head
 
-      playerQuests += PlayerQuest(player.id, quest, side = false, completed = false)
+      db.run(playerQuests += PlayerQuest(player.id, quest, side = false, completed = false))
       quest
     }
   }
