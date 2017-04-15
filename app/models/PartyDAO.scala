@@ -45,6 +45,7 @@ object PartyDAO {
   }
 
   def initGame(game: Game) = {
+    println(s"Init game ${game.id}")
     val elements = for {
       pl <- findPlayersByGame(game.id)
       it <- findItemsByGame(game.id)
@@ -56,7 +57,6 @@ object PartyDAO {
       case (allPlayers, items, powers, quests) =>
         // Give 10 points
         db.run(players.filter(_.game === game.id).map(_.score).update(10))
-
         // Give each player the same number of powers, but at least 2
         val powerAssignments = distributePowers(powers, allPlayers, giveEachPlayerAtLeast = 3, giveEachPowerAtLeast = 2)
 
@@ -65,7 +65,8 @@ object PartyDAO {
 
         giveQuests(quests, allPlayers, itemAssignments, powerAssignments)
 
-      case _ => throw new IllegalStateException("Can't init game.")
+      case _ =>
+        throw new IllegalStateException("Can't init game.")
     }
 
     db.run(games.filter(_.id === game.id).update(game.copy(started = true)))
@@ -406,7 +407,6 @@ object PartyDAO {
 
   def deletePlayer(id: Long): Future[Int] = db.run(playerById(id).delete)
   def updatePlayer(player: Player): Future[Int] = {
-    println(s"update player ${player.id}")
     val f = db.run(playerById(player.id).update(player))
 
     f.recover {
@@ -418,7 +418,6 @@ object PartyDAO {
   }
 
   def updatePlayerWithQuest(playerDesc: PlayerDescription): Future[Seq[Int]] = db.run {
-    println(s"update to ${playerDesc.name}, ${playerDesc.alias}")
     val playerProj = for {player <- players if player.id === playerDesc.id} yield (player.name, player.alias)
     val updateAction = playerProj.update(playerDesc.name, playerDesc.alias)
 
@@ -795,17 +794,18 @@ object PartyDAO {
   }
 
   private def getItemsNeeded(items: Seq[Item], allyItems: Seq[Item], allItems: Seq[Item], allPlayers: Seq[Player]): Seq[ItemNeeded] = {
-    def findRumors(forItem: Item, num: Int): (Player, Player) = {
-      val possessor = allPlayers.find(i => forItem.owner.contains(i.id)).get
-      var fake: Player = null
-      do {
-        fake = allPlayers((allPlayers.size * math.random).toInt)
-      } while (fake == possessor)
+    def findRumors(forItem: Item, num: Int): Option[(Player, Player)] = {
+      allPlayers.find(i => forItem.owner.contains(i.id)) map { possessor =>
+        var fake: Player = null
+        do {
+          fake = allPlayers((allPlayers.size * math.random).toInt)
+        } while (fake == possessor)
 
-      if (math.random < 0.5)
-        (possessor, fake)
-      else
-        (fake, possessor)
+        if (math.random < 0.5)
+          (possessor, fake)
+        else
+          (fake, possessor)
+      }
     }
 
     items map { item =>
@@ -813,24 +813,24 @@ object PartyDAO {
         new ItemNeeded(item, true, None, None)
       else {
         val rumors = findRumors(item, 2)
-        new ItemNeeded(item, false, Some(rumors._1.id), Some(rumors._2.id))
+        new ItemNeeded(item, false, rumors.map(_._1.id), rumors.map(_._2.id))
       }
     }
   }
 
   private def getPowersNeeded(powers: Seq[Power], allyPowers: Seq[PlayerPower], allPlayerPowers: Seq[PlayerPower]): Seq[PowerNeeded] = {
     def findRumors(forPower: Power, num: Int) = {
-      val possessor = allPlayerPowers.find(p => p.power == forPower.id).get
-      var fake: PlayerPower = null
+      allPlayerPowers.find(p => p.power == forPower.id) map { possessor =>
+        var fake: PlayerPower = null
+        do {
+          fake = allPlayerPowers((allPlayerPowers.size * math.random).toInt)
+        } while (fake == possessor)
 
-       do {
-         fake = allPlayerPowers((allPlayerPowers.size * math.random).toInt)
-       } while (fake == possessor)
-
-      if (math.random < 0.5)
-        (possessor, fake)
-      else
-        (fake, possessor)
+        if (math.random < 0.5)
+          (possessor, fake)
+        else
+          (fake, possessor)
+      }
     }
 
     powers map { power =>
@@ -838,7 +838,7 @@ object PartyDAO {
         new PowerNeeded(power, true, None, None)
       else {
         val rumors = findRumors(power, 2)
-        new PowerNeeded(power, false, Some(rumors._1.player), Some(rumors._2.player))
+        new PowerNeeded(power, false, rumors.map(_._1.player), rumors.map(_._2.player))
       }
     }
   }
